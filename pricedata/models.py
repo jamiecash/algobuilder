@@ -3,6 +3,8 @@ import logging
 
 from django.db import models
 
+from background_task.models import Task
+
 candle_periods = [
         ('1S', '1 Second'),
         ('5S', '5 Second'),
@@ -135,6 +137,25 @@ class DataSourceCandlePeriod(models.Model):
 
     # Whether data collection is active
     active = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        """
+        Override save start the retriever if active.
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        super().save(*args, **kwargs)
+
+        # Check if task is already scheduled
+        task_name = f"price data retriever for DataSourceCandlePeriod id {self.id}."
+        scheduled_tasks = Task.objects.filter(verbose_name=task_name)
+
+        # If not already scheduled then schedule background task to retrieve the data.
+        if len(scheduled_tasks) == 0:
+            from pricedata import tasks  # Import here due to circular dependency
+            tasks.retrieve_price_data(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=1,
+                                      repeat_until=None)
 
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \

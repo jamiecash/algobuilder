@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'background_task',
 ]
 
 DATABASES = {
@@ -43,6 +44,11 @@ DATABASES = {
         'PORT': '5432',
     }
 }
+
+# Background tasks
+MAX_ATTEMPTS = 25
+MAX_RUN_TIME = 3600
+BACKGROUND_TASK_RUN_ASYNC = True
 
 # Configure login from log-config.yaml
 with open('log-config.yaml', 'r') as f:
@@ -70,4 +76,4 @@ python manage.py runserver
 ```
 
 10) Once AlgoBuilder has been set up, you will need to: retrieve price data; calculate features; and calculate trading recommendations. The instructions for these steps are available below:
-[Retrieving price data](pricedata/readme.MD)
+[Retrieving price data](pricedata/README.md)
