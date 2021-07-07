@@ -1,9 +1,7 @@
 import ast
-import datetime
 import logging
 
 from django.db import models
-
 
 candle_periods = [
         ('1S', '1 Second'),
@@ -23,6 +21,13 @@ candle_periods = [
         ('1D', '1 Day'),
         ('1W', '1 Week'),
         ('1MO', '1 Month')
+    ]
+
+instrument_types = [
+        ('FOREX', 'Foreign Exchange'),
+        ('CFD', 'Contract for Difference'),
+        ('STOCK', 'Company Stock'),
+        ('CRYPTO', 'Crypto Currency')
     ]
 
 
@@ -52,7 +57,15 @@ class DataSource(models.Model):
         Returns the value of the specified connection param
         :return:
         """
-        return ast.literal_eval(self.connection_params)[param_name]
+        try:
+            param_dict = ast.literal_eval(self.connection_params)
+        except SyntaxError as ex:
+            msg = f"The string representation of a dict provided for connection params is invalid. " \
+                  f"connection_params={self.connection_params}."
+            self.__log.warning(msg)
+            raise SyntaxError(msg)
+
+        return param_dict[param_name]
 
     def save(self, *args, **kwargs):
         """
@@ -81,12 +94,7 @@ class Symbol(models.Model):
     """
     # Name of the symbol.
     name = models.CharField(max_length=50, unique=True)
-    instrument_type = models.CharField(max_length=10, choices=[
-        ('FOREX', 'Foreign Exchange'),
-        ('CFD', 'Contract for Difference'),
-        ('STOCK', 'Company Stock'),
-        ('CRYPTO', 'Crypto Currency')
-    ])
+    instrument_type = models.CharField(max_length=10, choices=instrument_types)
 
     def __repr__(self):
         return f"Symbol(name={self.name}, instrument_type={self.instrument_type})"
@@ -123,7 +131,7 @@ class DataSourceCandlePeriod(models.Model):
     period = models.CharField(max_length=3, choices=candle_periods)
 
     # The first date that the candle will be retrieved from
-    start_from = models.DateTimeField(default=datetime.datetime.now())
+    start_from = models.DateTimeField()
 
     # Whether data collection is active
     active = models.BooleanField(default=False)

@@ -8,7 +8,10 @@ To retrieve price data for AlgoBuilder, you will need to:
 ## Build your datasource
 A datasource is the source of the symbol and price data for your application. AlgoBuilder can currently retrieve price data from  multiple datasets.
 
-1) Create a python class to implement the connection to your price data source. This should extend pricedata.datasource.DataSourceImplementation and should implement  methods for get_symbols and get_prices. Implement the methods to retrieve the symbol and price data from your datasource. An example that retrieves data from MetaTrader5 is provided below.
+1) Create a python class to implement the connection to your price data source. This should extend ```pricedata.datasource.DataSourceImplementation```. Any parameters required for your data source will be provided during set up and can be accessed through ```self._data_source_model.get_connection_param('param_name')```. Your datasource must implement the following methods:
+   * ```get_symbols(self) -> List[Dict[str, str]]:``` This should return a list of symbols for your datasource. Each symbol is a dict containing 'symbol_name' and 'instrument_type'. A list of supported instrument_types is available in ```models.instrument_types```.
+   * ```get_prices(self, symbol: str, from_date: datetime, to_date: datetime, period: str) -> pd.DataFrame:``` This should return a dataframe of price data candles for the specified symbol name between the specified date range. The candles returned should be for the specified period. Supported period values are available in ```models.candle_periods```. For any period that you don't wish to support, you should raise a ```datasource.PeriodNotImplementedError```. 
+   *  An example that retrieves symbol and price data from MetaTrader5 is provided below. This examples makes use of the MetaTrader copy_rates and copy_ticks APIs, using ticks and resampling for periods not supported by the rates API.
 
 mt5-datasource.py
 ```python
