@@ -125,9 +125,12 @@ class DataSourceCandlePeriod(models.Model):
     # The first date that the candle will be retrieved from
     start_from = models.DateTimeField(default=datetime.datetime.now())
 
+    # Whether data collection is active
+    active = models.BooleanField(default=False)
+
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
-               f"start_from={self.start_from})"
+               f"start_from={self.start_from}, active={self.active})"
 
     def __str__(self):
         return f"datasource={self.datasource}, period={self.period}"

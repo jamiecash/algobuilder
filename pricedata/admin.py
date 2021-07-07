@@ -45,6 +45,6 @@ class DataSourceSymbolAdmin(admin.ModelAdmin):
 # DataSourceCandlePeriod
 @admin.register(DataSourceCandlePeriod)
 class DataSourceCandlePeriodAdmin(admin.ModelAdmin):
-    list_display = ("datasource", "period", "start_from")
-    list_editable = ("period", "start_from")
+    list_display = ("datasource", "period", "start_from", "active")
+    list_editable = ("period", "start_from", "active")
     list_filter = ("datasource__name", "period")
