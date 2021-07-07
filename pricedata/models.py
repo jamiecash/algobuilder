@@ -1,7 +1,29 @@
 import ast
+import datetime
 import logging
 
 from django.db import models
+
+
+candle_periods = [
+        ('1S', '1 Second'),
+        ('5S', '5 Second'),
+        ('10S', '10 Second'),
+        ('15S', '15 Second'),
+        ('30S', '30 Second'),
+        ('1M', '1 Minute'),
+        ('5M', '5 Minute'),
+        ('10M', '10 Minute'),
+        ('15M', '15 Minute'),
+        ('30M', '30 Minute'),
+        ('1H', '1 Hour'),
+        ('3H', '3 Hour'),
+        ('6H', '6 Hour'),
+        ('12H', '12 Hour'),
+        ('1D', '1 Day'),
+        ('1W', '1 Week'),
+        ('1MO', '1 Month')
+    ]
 
 
 class DataSource(models.Model):
@@ -50,7 +72,7 @@ class DataSource(models.Model):
                f"requirements_file={self.requirements_file}, connection_params={self.connection_params})"
 
     def __str__(self):
-        return f"name={self.name}"
+        return f"{self.name}"
 
 
 class Symbol(models.Model):
@@ -59,12 +81,18 @@ class Symbol(models.Model):
     """
     # Name of the symbol.
     name = models.CharField(max_length=50, unique=True)
+    instrument_type = models.CharField(max_length=10, choices=[
+        ('FOREX', 'Foreign Exchange'),
+        ('CFD', 'Contract for Difference'),
+        ('STOCK', 'Company Stock'),
+        ('CRYPTO', 'Crypto Currency')
+    ])
 
     def __repr__(self):
-        return f"Symbol(name={self.name})"
+        return f"Symbol(name={self.name}, instrument_type={self.instrument_type})"
 
     def __str__(self):
-        return f"name={self.name}"
+        return f"{self.name}"
 
 
 class DataSourceSymbol(models.Model):
@@ -84,7 +112,25 @@ class DataSourceSymbol(models.Model):
                f"retrieve_price_data={self.retrieve_price_data})"
 
     def __str__(self):
-        return f"datasource={self.datasource}, symbol={self.symbol}"
+        return f"datasource={self.datasource}, symbol={self.symbol}, retrieve_price_data={self.retrieve_price_data}"
+
+
+class DataSourceCandlePeriod(models.Model):
+    """
+    The candle periods that will be used to retrieve price data from a datasource.
+    """
+    datasource = models.ForeignKey(DataSource, on_delete=models.CASCADE)
+    period = models.CharField(max_length=3, choices=candle_periods)
+
+    # The first date that the candle will be retrieved from
+    start_from = models.DateTimeField(default=datetime.datetime.now())
+
+    def __repr__(self):
+        return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
+               f"start_from={self.start_from})"
+
+    def __str__(self):
+        return f"datasource={self.datasource}, period={self.period}"
 
 
 class Candle(models.Model):
@@ -98,25 +144,7 @@ class Candle(models.Model):
     time = models.DateTimeField()
 
     # Period for the candle
-    period = models.CharField(max_length=3, choices=[
-        ('1S', '1 Second'),
-        ('5S', '5 Second'),
-        ('10S', '10 Second'),
-        ('15S', '15 Second'),
-        ('30S', '30 Second'),
-        ('1M', '1 Minute'),
-        ('5M', '5 Minute'),
-        ('10M', '10 Minute'),
-        ('15M', '15 Minute'),
-        ('30M', '30 Minute'),
-        ('1H', '1 Hour'),
-        ('3H', '3 Hour'),
-        ('6H', '6 Hour'),
-        ('12H', '12 Hour'),
-        ('1D', '1 Day'),
-        ('1W', '1 Week'),
-        ('1M', '1 Month')
-    ])
+    period = models.CharField(max_length=3, choices=candle_periods)
 
     # OHLC columns for bid and ask
     bid_open = models.DecimalField(max_digits=12, decimal_places=6)
