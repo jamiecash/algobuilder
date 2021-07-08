@@ -4,6 +4,8 @@ import logging
 from django.db import models
 
 from background_task.models import Task
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 candle_periods = [
         ('1S', '1 Second'),
@@ -124,6 +126,9 @@ class DataSourceSymbol(models.Model):
     def __str__(self):
         return f"datasource={self.datasource}, symbol={self.symbol}, retrieve_price_data={self.retrieve_price_data}"
 
+    class Meta:
+        unique_together = ('datasource', 'symbol',)
+
 
 class DataSourceCandlePeriod(models.Model):
     """
@@ -153,9 +158,9 @@ class DataSourceCandlePeriod(models.Model):
 
         # If not already scheduled then schedule background task to retrieve the data.
         if len(scheduled_tasks) == 0:
-            from pricedata import tasks  # Import here due to circular dependency
-            tasks.retrieve_price_data(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=1,
-                                      repeat_until=None)
+            import pricedata.tasks as tasks  # Import here due to circular dependency
+            tasks.PriceDataRetriever.retrieve(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=60,
+                                              repeat_until=None)
 
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
@@ -163,6 +168,9 @@ class DataSourceCandlePeriod(models.Model):
 
     def __str__(self):
         return f"datasource={self.datasource}, period={self.period}"
+
+    class Meta:
+        unique_together = ('datasource', 'period',)
 
 
 class Candle(models.Model):
@@ -203,3 +211,14 @@ class Candle(models.Model):
                f"bid_open={self.bid_open}, bid_high={self.bid_high}, bid_low={self.bid_low}, " \
                f"bid_close={self.bid_close}, ask_open={self.ask_open}, ask_high={self.ask_high}, " \
                f"ask_low={self.ask_low}, ask_close={self.ask_close}, volume={self.volume}"
+
+    class Meta:
+        unique_together = ('datasource_symbol', 'time', 'period',)
+
+
+# Receiver to delete task when DataSourceCandlePeriod is deleted
+@receiver(post_delete, sender=DataSourceCandlePeriod)
+def delete_datasourcecandleperiod_receiver(sender, instance, using, **kwargs):
+    task_name = f"price data retriever for DataSourceCandlePeriod id {instance.id}."
+    task = Task.objects.get(verbose_name=task_name)
+    task.delete()

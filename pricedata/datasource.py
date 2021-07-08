@@ -21,6 +21,13 @@ class PeriodNotImplementedError(Exception):
     pass
 
 
+class DataSourceInstanceNotImplementedError(Exception):
+    """
+    An exception that can be raised by instance if specified datasource is not implemented.
+    """
+    pass
+
+
 class DataSourceImplementation:
     """
     The interface for applications datasources
@@ -55,17 +62,27 @@ class DataSourceImplementation:
 
         data_source_model = DataSource.objects.filter(name=name)[0]
 
-        # Get module and class name
-        module_name = data_source_model.module.name
-        class_name = data_source_model.class_name
+        if data_source_model.module.name != '' and data_source_model.class_name != '':
+            # Get module and class name
+            module_name = data_source_model.module.name
+            class_name = data_source_model.class_name
 
-        # Remove .py and replace / with .
-        module_name = module_name.replace('/', '.')
-        module_name = module_name.replace('.py', '')
+            # Remove .py and replace / with .
+            module_name = module_name.replace('/', '.')
+            module_name = module_name.replace('.py', '')
 
-        # Load module and initialise class
-        module = importlib.import_module(module_name)
-        clazz = getattr(module, class_name)
+            # Load module and initialise class
+            try:
+                module = importlib.import_module(module_name)
+                clazz = getattr(module, class_name)
+            except NameError as ex:
+                raise DataSourceInstanceNotImplementedError(
+                    f'DataSource instance cannot be created for datasource {name}.', ex)
+        else:
+            raise DataSourceInstanceNotImplementedError(f'DataSource instance cannot be created for datasource {name}. '
+                                                        f'Either module or classname has not been provided. '
+                                                        f'module={data_source_model.module.name}, '
+                                                        f'classname={data_source_model.class_name}.')
 
         return clazz(data_source_model)
 
@@ -91,12 +108,13 @@ class DataSourceImplementation:
         """
 
         # Install libraries in requirements file. This must be done prior to instance being created due to dependencies
-        try:
-            subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r',
-                                   f'{datasource.requirements_file.name}'])
-        except subprocess.CalledProcessError as ex:
-            DataSourceImplementation.__log.warning(f"Requirements for DataSource {datasource.name} could not be "
-                                                   f"installed.",  ex)
+        if datasource.requirements_file.name != '':
+            try:
+                subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r',
+                                       f'{datasource.requirements_file.name}'])
+            except subprocess.CalledProcessError as ex:
+                DataSourceImplementation.__log.warning(f"Requirements for DataSource {datasource.name} could not be "
+                                                       f"installed.",  ex)
 
         # Get symbols from instance
         instance = DataSourceImplementation.instance(datasource.name)
