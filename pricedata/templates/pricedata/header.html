@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title></title>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    {% load static %}
+
+    <!-- Bootstrap 4 -->
+    <link rel="stylesheet" href="{% static 'bs/css/bootstrap.min.css' %}">
+    <script src="{% static 'jq/js/jquery-3.6.0.js' %}"></script>
+    <script src="{% static 'bs/js/bootstrap.bundle.js' %}"></script>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="{% static 'fa/css/font-awesome.min.css' %}" >
+
+    <!-- Moment.js -->
+    <script src="{% static 'mo/js/moment.min.js' %}"></script>
+
+    <!-- Tempus Dominus Bootstrap 4 -->
+    <link rel="stylesheet" href="{% static 'td/css/tempusdominus-bootstrap-4.min.css' %}" />
+    <script src="{% static 'td/js/tempusdominus-bootstrap-4.min.js' %}"></script>
+
+    <!-- Any site wide specific css and js -->
+    <link rel="stylesheet" href="{% static "cst/css/custom.css" %}" />
+    <script src="{% static "cst/js/custom.js" %}"></script>
+
+    <!-- Any app specific css and js -->
+    <link rel="stylesheet" href="{% static "pricedata/cst/css/custom.css" %}" />
+    <script src="{% static "pricedata/cst/js/custom.js" %}"></script>
+
+    <!-- favicon -->
+    <link rel="shortcut icon" type="image/png" href="{% static 'cst/img/favicon.ico' %}"/>
+</head>

@@ -8,29 +8,14 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
 candle_periods = [
-        ('1S', '1 Second'),
-        ('5S', '5 Second'),
-        ('10S', '10 Second'),
-        ('15S', '15 Second'),
-        ('30S', '30 Second'),
-        ('1M', '1 Minute'),
-        ('5M', '5 Minute'),
-        ('10M', '10 Minute'),
-        ('15M', '15 Minute'),
-        ('30M', '30 Minute'),
-        ('1H', '1 Hour'),
-        ('3H', '3 Hour'),
-        ('6H', '6 Hour'),
-        ('12H', '12 Hour'),
-        ('1D', '1 Day'),
-        ('1W', '1 Week'),
+        ('1S', '1 Second'), ('5S', '5 Second'), ('10S', '10 Second'), ('15S', '15 Second'), ('30S', '30 Second'),
+        ('1M', '1 Minute'), ('5M', '5 Minute'), ('10M', '10 Minute'), ('15M', '15 Minute'), ('30M', '30 Minute'),
+        ('1H', '1 Hour'), ('3H', '3 Hour'), ('6H', '6 Hour'), ('12H', '12 Hour'), ('1D', '1 Day'), ('1W', '1 Week'),
         ('1MO', '1 Month')
     ]
 
 instrument_types = [
-        ('FOREX', 'Foreign Exchange'),
-        ('CFD', 'Contract for Difference'),
-        ('STOCK', 'Company Stock'),
+        ('FOREX', 'Foreign Exchange'), ('CFD', 'Contract for Difference'), ('STOCK', 'Company Stock'),
         ('CRYPTO', 'Crypto Currency')
     ]
 
@@ -80,9 +65,15 @@ class DataSource(models.Model):
         """
         super().save(*args, **kwargs)
 
-        # Configure new datasource
-        from pricedata.datasource import DataSourceImplementation  # Import here due to circular dependency
-        DataSourceImplementation.configure(datasource=self)
+        import pricedata.tasks as tasks  # Import here due to circular dependency.
+
+        # Check if task is already scheduled
+        task_name = f"DataSource Configurator for DataSource id {self.id}."
+        scheduled_tasks = Task.objects.filter(verbose_name=task_name)
+
+        # If not already scheduled then schedule background task to configure data source.
+        if len(scheduled_tasks) == 0:
+            tasks.DataSourceConfigure.configure(ds=self.id, verbose_name=task_name)
 
     def __repr__(self):
         return f"DataSource(name={self.name}, module={self.module}, class={self.class_name}, " \
@@ -152,13 +143,14 @@ class DataSourceCandlePeriod(models.Model):
         """
         super().save(*args, **kwargs)
 
+        import pricedata.tasks as tasks  # Import here due to circular dependency.
+
         # Check if task is already scheduled
         task_name = f"price data retriever for DataSourceCandlePeriod id {self.id}."
         scheduled_tasks = Task.objects.filter(verbose_name=task_name)
 
         # If not already scheduled then schedule background task to retrieve the data.
         if len(scheduled_tasks) == 0:
-            import pricedata.tasks as tasks  # Import here due to circular dependency
             tasks.PriceDataRetriever.retrieve(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=60,
                                               repeat_until=None)
 

@@ -3,8 +3,31 @@ from django.contrib import admin
 # Register your models here.
 from .models import DataSource, DataSourceCandlePeriod, DataSourceSymbol, Symbol
 
-# DataSource
-admin.site.register(DataSource)
+# Override titles etc.
+admin.site.site_title = "AlgoBuilder site admin"
+admin.site.site_header = 'AlgoBuilder administration'
+admin.site.index_title = 'AlgoBuilder administration'
+
+
+# DataSourceCandlePeriod. Not registered as used in line on DataSource admin
+class DataSourceCandlePeriodAdmin(admin.ModelAdmin):
+    list_display = ("datasource", "period", "start_from", "active")
+    list_editable = ("period", "start_from", "active")
+    list_filter = ("datasource__name", "period")
+
+
+# CandlePeriods will be administered on datasource admin page
+class CandlePeriods(admin.TabularInline):
+    model = DataSourceCandlePeriod
+    extra = 0
+
+
+# DataSource. Edit candle periods inline
+@admin.register(DataSource)
+class DataSourceAdmin(admin.ModelAdmin):
+    list_display = ("name", "module", "class_name", "requirements_file", "connection_params")
+
+    inlines = [CandlePeriods]
 
 
 # Symbol
@@ -13,6 +36,7 @@ class SymbolAdmin(admin.ModelAdmin):
     list_display = ("name", "instrument_type")
     list_editable = ("instrument_type",)
     list_filter = ("instrument_type",)
+    search_fields = ["name", "instrument_type"]
 
 
 # DataSourceSymbol
@@ -41,10 +65,3 @@ class DataSourceSymbolAdmin(admin.ModelAdmin):
     search_fields = ["symbol__name", "symbol__instrument_type"]
     actions = [set_retrieve_price_data_for_all, unset_retrieve_price_data_for_all]
 
-
-# DataSourceCandlePeriod
-@admin.register(DataSourceCandlePeriod)
-class DataSourceCandlePeriodAdmin(admin.ModelAdmin):
-    list_display = ("datasource", "period", "start_from", "active")
-    list_editable = ("period", "start_from", "active")
-    list_filter = ("datasource__name", "period")

@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 from typing import List, Dict
 
-from pricedata.models import DataSource, DataSourceSymbol, Symbol
+from pricedata import models
 
 
 class PeriodNotImplementedError(Exception):
@@ -44,7 +44,7 @@ class DataSourceImplementation:
     _prices_columns = ['time', 'period', 'bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open', 'ask_high',
                        'ask_low', 'ask_close', 'volume']
 
-    def __init__(self, data_source_model: DataSource) -> None:
+    def __init__(self, data_source_model: models.DataSource) -> None:
         """
         Construct the datasource implementation and stores its model
         :param data_source_model: The DataSource model instance containing the details required to create and connect to
@@ -60,7 +60,7 @@ class DataSourceImplementation:
         :return:
         """
 
-        data_source_model = DataSource.objects.filter(name=name)[0]
+        data_source_model = models.DataSource.objects.filter(name=name)[0]
 
         if data_source_model.module.name != '' and data_source_model.class_name != '':
             # Get module and class name
@@ -92,7 +92,7 @@ class DataSourceImplementation:
         Retruns a list of all DataSources
         :return:
         """
-        all_datasource_models = DataSource.objects.all()
+        all_datasource_models = models.DataSource.objects.all()
 
         all_datasource_implementations = []
         for datasource_model in all_datasource_models:
@@ -101,7 +101,7 @@ class DataSourceImplementation:
         return all_datasource_implementations
 
     @staticmethod
-    def configure(datasource):
+    def configure(datasource: models.DataSource):
         """
         Configure this datasource for its first use. Installs dependencies and copies symbols over to database.
         :return:
@@ -125,26 +125,26 @@ class DataSourceImplementation:
         new_ds_symbols = []
         for ds_symbol in ds_symbols:
             # Get symbol if it already exists, otherwise create it
-            symbols = Symbol.objects.filter(name=ds_symbol['symbol_name'])
+            symbols = models.Symbol.objects.filter(name=ds_symbol['symbol_name'])
             if len(symbols) > 0:
                 symbol = symbols[0]
             else:
                 # Add it.
-                symbol = Symbol(name=ds_symbol['symbol_name'], instrument_type=ds_symbol['instrument_type'])
+                symbol = models.Symbol(name=ds_symbol['symbol_name'], instrument_type=ds_symbol['instrument_type'])
                 new_symbols.append(symbol)
 
             # Create a DataSourceSymbol if it doesnt already exist
-            ds_symbols = DataSourceSymbol.objects.filter(datasource=datasource, symbol=symbol)
+            ds_symbols = models.DataSourceSymbol.objects.filter(datasource=datasource, symbol=symbol)
 
             if len(ds_symbols) == 0:
-                ds_symbol = DataSourceSymbol(datasource=datasource, symbol=symbol)
+                ds_symbol = models.DataSourceSymbol(datasource=datasource, symbol=symbol)
                 new_ds_symbols.append(ds_symbol)
 
         # Bulk create
         DataSourceImplementation.__log.debug(f"Bulk creating {len(new_symbols)} symbols and {len(new_ds_symbols)} "
                                              f"datasource symbol records for datasource {datasource}.")
-        Symbol.objects.bulk_create(new_symbols)
-        DataSourceSymbol.objects.bulk_create(new_ds_symbols)
+        models.Symbol.objects.bulk_create(new_symbols)
+        models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)
 
     @abc.abstractmethod
     def get_symbols(self) -> List[Dict[str, str]]:

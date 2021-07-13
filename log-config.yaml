@@ -25,11 +25,9 @@ root:
   level: DEBUG
   handlers:
   - console
-  - file
 loggers:
   algobuilder:
     level: DEBUG
     handlers:
     - console
-    - file
     propagate: 0

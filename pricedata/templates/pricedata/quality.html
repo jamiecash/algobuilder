@@ -1,0 +1,21 @@
+{% include "pricedata/header.html" %}
+
+
+<form action="/pricedata/quality/" method="post">
+    {% csrf_token %}
+    {{ form }}
+    <button type="submit" class="btn-primary">Submit</button>
+</form>
+{% if data %}
+    <ul>
+    {% for d in data %}
+        <li>
+            <p>{{ d }}</p>
+        </li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>No data available.</p>
+{% endif %}
+
+{% include "pricedata/footer.html" %}

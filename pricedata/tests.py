@@ -45,13 +45,12 @@ class DataSourceTests(TestCase):
         ds.save()
         unused_ds = models.DataSource(name='unused')
 
-        # Assert that our mock had its configure function called exactly once
-        self.assertTrue(mock.configure.call_count == 1)
+        # Test that a task was created to configure this datasource
+        task_name = f"DataSource Configurator for DataSource id {ds.id}."
 
-        # And assert that the datasource was passed and not a different one
-        call_args_list = mock.configure.call_args_list
-        self.assertTrue(((), {'datasource': ds}) in call_args_list)
-        self.assertFalse(((), {'datasource': unused_ds}) in call_args_list)
+        # Check that task exists
+        task = task_model.Task.objects.get(verbose_name=task_name)
+        self.assertIsNotNone(task)
 
 
 class DataSourceCandlePeriodTests(TestCase):
@@ -120,3 +119,4 @@ class PriceDataRetrieverTests(TestCase):
         tasks.PriceDataRetriever.retrieve_impl(datasource_candleperiod_id=dscp.id)
         candles = models.Candle.objects.all()
         self.assertTrue(len(candles) == 25)
+
