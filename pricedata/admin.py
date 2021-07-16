@@ -1,7 +1,9 @@
 from django.contrib import admin
+from django import forms
 
 # Register your models here.
-from .models import DataSource, DataSourceCandlePeriod, DataSourceSymbol, Symbol
+from plugin.models import PluginClass
+from . import models
 
 # Override titles etc.
 admin.site.site_title = "AlgoBuilder site admin"
@@ -18,20 +20,21 @@ class DataSourceCandlePeriodAdmin(admin.ModelAdmin):
 
 # CandlePeriods will be administered on datasource admin page
 class CandlePeriods(admin.TabularInline):
-    model = DataSourceCandlePeriod
+    model = models.DataSourceCandlePeriod
     extra = 0
 
 
 # DataSource. Edit candle periods inline
-@admin.register(DataSource)
+@admin.register(models.DataSource)
 class DataSourceAdmin(admin.ModelAdmin):
-    list_display = ("name", "module", "class_name", "requirements_file", "connection_params")
+    fields = ("name", "pluginclass", "connection_params")
+    list_display = ("name", "pluginclass", "connection_params")
 
     inlines = [CandlePeriods]
 
 
 # Symbol
-@admin.register(Symbol)
+@admin.register(models.Symbol)
 class SymbolAdmin(admin.ModelAdmin):
     list_display = ("name", "instrument_type")
     list_editable = ("instrument_type",)
@@ -50,7 +53,7 @@ def unset_retrieve_price_data_for_all(modeladmin, request, queryset):
     queryset.update(retrieve_price_data=False)
 
 
-@admin.register(DataSourceSymbol)
+@admin.register(models.DataSourceSymbol)
 class DataSourceSymbolAdmin(admin.ModelAdmin):
 
     def get_symbol_instrument_type(self, obj):

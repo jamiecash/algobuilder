@@ -8,10 +8,13 @@ from django.utils import timezone
 from pricedata import datasource
 
 
-class PriceDataRetriever:
+class DataRetriever:
     """
-    A class containing the method to retrieve price data from the data source and populate the application
+    A class containing the method to retrieve symbol and price data from the data source and populate the application
     """
+
+    # Logger
+    __log = logging.getLogger(__name__)
 
     # Define number of days of data to retrieve on each run for each time period
     period_batch_days = candle_periods = {'1S': 1/24, '5S': 1/24*5, '10S': 1/24*10, '15S': 1/24*15, '30S': 1, '1M': 1,
@@ -20,12 +23,23 @@ class PriceDataRetriever:
 
     @staticmethod
     @background(schedule=0, queue='price-data')
-    def retrieve(datasource_candleperiod_id: int) -> None:
+    def retrieve_prices(datasource_candleperiod_id: int) -> None:
         # Call un-decorated method. Enables unit-testing of functional code outside of tasks framework
-        PriceDataRetriever.retrieve_impl(datasource_candleperiod_id)
+        DataRetriever.retrieve_prices_impl(datasource_candleperiod_id)
 
     @staticmethod
-    def retrieve_impl(datasource_candleperiod_id: int):
+    @background(schedule=0, queue='symbol-data')
+    def retrieve_symbols(datasource_id):
+        # Call un-decorated method. Enables unit-testing of functional code outside of tasks framework
+        DataRetriever.retrieve_symbols_impl(datasource_id)
+
+    @staticmethod
+    def retrieve_prices_impl(datasource_candleperiod_id: int):
+        """
+        Retrieves prices for datasource candle period from datasource and populates in application database
+        :param datasource_candleperiod_id:
+        :return:
+        """
         from pricedata import models  # Imported when needed, due to circular dependency
 
         # Logger
@@ -103,19 +117,47 @@ class PriceDataRetriever:
             # Inactive
             log.debug(f"Task running for inactive DataSourceCandlePeriod {ds_pc}.")
 
-
-class DataSourceConfigure:
-    """
-    A class to call the datasource configure method. Runs as a task so that web form isn't tied up on save.
-    """
-
     @staticmethod
-    @background(schedule=0, queue='datasource-config')
-    def configure(datasource_id: int):
+    def retrieve_symbols_impl(datasource_id):
+        """
+        Retrieves symbols for datasource and populates in application database
+        :param datasource_id:
+        :return:
+        """
         from pricedata import models  # Imported when needed, due to circular dependency
 
         # Get the datasource candleperiod mapping class from its id
         ds = models.DataSource.objects.get(id=datasource_id)
 
-        # Configure the datasource
-        datasource.DataSourceImplementation.configure(datasource=ds)
+        # Get an instance of the datasource implementation to retrieve symbols from
+        instance = datasource.DataSourceImplementation.instance(ds.name)
+
+        # Get symbols from instance
+        ds_symbols = instance.get_symbols()
+
+        # Update the database. We will update in bulk due to potential volume of symbols from datasource
+        new_symbols = []
+        new_ds_symbols = []
+        for ds_symbol in ds_symbols:
+            # Get symbol if it already exists, otherwise create it
+            symbols = models.Symbol.objects.filter(name=ds_symbol['symbol_name'])
+            if len(symbols) > 0:
+                symbol = symbols[0]
+            else:
+                # Add it.
+                symbol = models.Symbol(name=ds_symbol['symbol_name'], instrument_type=ds_symbol['instrument_type'])
+                new_symbols.append(symbol)
+
+            # Create a DataSourceSymbol if it doesnt already exist
+            ds_symbols = models.DataSourceSymbol.objects.filter(datasource=ds, symbol=symbol)
+
+            if len(ds_symbols) == 0:
+                ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol)
+                new_ds_symbols.append(ds_symbol)
+
+        # Bulk create
+        DataRetriever.__log.debug(f"Bulk creating {len(new_symbols)} symbols and {len(new_ds_symbols)} datasource "
+                                  f"symbol records for datasource {datasource}.")
+
+        models.Symbol.objects.bulk_create(new_symbols)
+        models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)

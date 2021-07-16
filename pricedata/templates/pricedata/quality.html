@@ -1,21 +1,174 @@
-{% include "pricedata/header.html" %}
+{% extends "base.html" %}
 
+{% block content %}
+<div class="container-fluid">
+      <div class="row">
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+          <div class="sidebar-sticky">
+            <form method="post">
+                {% csrf_token %}
+                <ul class="list-group">
+                  <li class="list-group-item">
+                      <h1 class="h2">Filters</h1>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.from_date.label }}</div>
+                        <div class="flex-fill">{{ form.from_date }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.to_date.label }}</div>
+                        <div class="flex-fill">{{ form.to_date }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.data_sources.label }}</div>
+                        <div class="flex-fill">{{ form.data_sources }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.candle_period.label }}</div>
+                        <div class="flex-fill">{{ form.candle_period }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.aggregation_period.label }}</div>
+                        <div class="flex-fill">{{ form.aggregation_period }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <input class="btn btn-primary" type="submit" value="Submit">
+                  </li>
+                </ul>
+            </form>
+          </div>
+        </nav>
 
-<form action="/pricedata/quality/" method="post">
-    {% csrf_token %}
-    {{ form }}
-    <button type="submit" class="btn-primary">Submit</button>
-</form>
-{% if data %}
-    <ul>
-    {% for d in data %}
-        <li>
-            <p>{{ d }}</p>
-        </li>
-    {% endfor %}
-    </ul>
-{% else %}
-    <p>No data available.</p>
-{% endif %}
+        <main role="main" class="col-md-9 ml-sm-auto col-lg-10 pt-3 px-4">
+          <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+            <h1 class="h2">Data Quality Dashboard</h1>
+            <div class="btn-toolbar mb-2 mb-md-0">
+            </div>
+          </div>
+          <div>
+            {% if data %}
+                <ul>
+                    {% for key, value in data.items %}
+                        <li class="list-group-item">
+                            <div>{{ key }}</div>
+                        </li>
+                        <li class="list-group-item">
+                           <div id="chart">
+                                <script>
+                                    var options = {
+                                      series: [
+                                          {% for symbol in value %}
+                                          {
+                                            name: '{{symbol.name}}',
+                                            data: [{% for plot in symbol.data %}
+                                                [new Date({{ plot.0 }}), {{ plot.1}}],
+                                                {% endfor %}]
 
-{% include "pricedata/footer.html" %}
+                                          },
+                                          {% endfor %}],
+                                      chart: {
+                                      height: 350,
+                                      type: 'heatmap',
+                                    },
+                                    plotOptions: {
+                                      heatmap: {
+                                        shadeIntensity: 0.5,
+                                        radius: 0,
+                                        useFillColorAsStroke: true,
+                                        colorScale: {
+                                          ranges: [{
+                                              from: -30,
+                                              to: 5,
+                                              name: 'low',
+                                              color: '#00A100'
+                                            },
+                                            {
+                                              from: 6,
+                                              to: 20,
+                                              name: 'medium',
+                                              color: '#128FD9'
+                                            },
+                                            {
+                                              from: 21,
+                                              to: 45,
+                                              name: 'high',
+                                              color: '#FFB200'
+                                            },
+                                            {
+                                              from: 46,
+                                              to: 55,
+                                              name: 'extreme',
+                                              color: '#FF0000'
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    dataLabels: {
+                                      enabled: false
+                                    },
+                                    stroke: {
+                                      width: 1
+                                    },
+                                    title: {
+                                      text: 'HeatMap Chart with Color Range'
+                                    },
+                                    };
+
+                                    var chart = new ApexCharts(document.querySelector("#chart"), options);
+                                    chart.render();
+                                </script>
+                           </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p>No data available.</p>
+            {% endif %}
+
+          </div>
+
+          <h2>Data</h2>
+          <div class="table-responsive">
+            <table class="table table-striped table-sm">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Header</th>
+                  <th>Header</th>
+                  <th>Header</th>
+                  <th>Header</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1,001</td>
+                  <td>Lorem</td>
+                  <td>ipsum</td>
+                  <td>dolor</td>
+                  <td>sit</td>
+                </tr>
+                <tr>
+                  <td>1,002</td>
+                  <td>amet</td>
+                  <td>consectetur</td>
+                  <td>adipiscing</td>
+                  <td>elit</td>
+                </tr>
+                </tbody>
+            </table>
+          </div>
+        </main>
+      </div>
+    </div>
+{% endblock content %}

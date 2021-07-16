@@ -21,7 +21,7 @@ A datasource is the source of the symbol and price data for your application. Al
 requirements.txt
 ```text
 MetaTrader5==5.0.34
-pandas==1.3.0
+pandas~=1.3.0
 ```
 
 ## Configure your datasource
@@ -30,16 +30,24 @@ pandas==1.3.0
 python manage.py runserver
 ```
 
-2) In a web browser, navigate to the datasource admin page (http://localhost:8000/admin/pricedata/datasource/) and log in using the admin account that you created in setup.
+3) Load the datasource as plugin, following the instructions below:
+   
+   [Load a plugin](../plugin/README.md)
+   
+   
+4) Navagate to the datasource admin page (http://localhost:8000/admin/pricedata/datasource/).
 
-3) Click 'ADD DATA SOURCE', then:
-   * Provide a name for your datasource; 
-   * Select the python module containing your datasource implementation class that you created in 'Build your datasource'.
-   * Enter the classname of your datasource as defined in your module.
-   * Select requirements file that you created in 'Build your datasource'.
+5) Click 'ADD DATASOURCE', then:
+   * Provide a name for your datasource.
+   * Select the DataSourceImplementation class that you loaded in step 3.
    * Provide any parameters required by your datasource class as a string representation of a dict. (e.g., the MetaTrader example above requires a market_watch_only parameter which can be input as {'market_watch_only': False}).
    * Add the candle periods that you would like to retrieve for your datasource. AlgoBuilder can be configured to retrieve price candle data for multiple periods at the same time. The 'start from' setting will be the first candle retrieved for the period when the candle data is retrieved from the datasource for the first time. Set the 'active' flag to enable retrieval of price data for period.
-   * Click save. This may take a few seconds, depending on the number iof symbols retrieved, the speed of your datasource code and the connection to your datasource. 
+   * Click save.
+   * Rerun the task processor if it is not already running.
+   ```shell
+   python manage.py process_tasks
+   ```
+   
    
 A screenshot for our above example has been provided below.
      
@@ -55,12 +63,7 @@ Your data source implementation should have correctly populated the instrument t
 You can select whether price data will be retrieved for each symbol for each data source from the 'datasourcesymbol' admin page. http://localhost:8000/admin/pricedata/datasourcesymbol/ . Price data can be retrieved for each symbol from any number of data sources. Use the filters and search available symbols in the admin page to quickly find and select symbols by their name or instrument type. You can set and unset the retrieve price data flag for all selected symbols using the actions box at the top of the page.
 
 ## Start retrieving price data
-Run the task processor so start price data retrieval
+If not already running, run the task processor to retrieving price data for all selected symbols.
 ```shell
 python manage.py process_tasks
 ```
-
-## Data model
-The data model for the pricedata functionality of AlgoBuilder is shown below.
-
-![pricedata data model](README/images/datamodel.png)

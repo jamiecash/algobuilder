@@ -20,5 +20,6 @@ from django.views.generic import RedirectView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('plugin/', include('plugin.urls')),
     path('pricedata/', include('pricedata.urls')),
 ]

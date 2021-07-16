@@ -7,6 +7,7 @@ from background_task.models import Task
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
+
 candle_periods = [
         ('1S', '1 Second'), ('5S', '5 Second'), ('10S', '10 Second'), ('15S', '15 Second'), ('30S', '30 Second'),
         ('1M', '1 Minute'), ('5M', '5 Minute'), ('10M', '10 Minute'), ('15M', '15 Minute'), ('30M', '30 Minute'),
@@ -31,12 +32,9 @@ class DataSource(models.Model):
     # The datasource name
     name = models.CharField(max_length=20, unique=True)
 
-    # The datasource implementation class
-    module = models.FileField(max_length=200, upload_to=r'pricedata\datasources')
-    class_name = models.CharField(max_length=20)
-
-    # The requirements.txt file containing any dependencies
-    requirements_file = models.FileField(max_length=200, upload_to=r'pricedata\datasources')
+    # The datasource plugin class
+    pluginclass = models.ForeignKey('plugin.PluginClass', on_delete=models.CASCADE,
+                                    limit_choices_to={'plugin_type': 'DataSourceImplementation'})
 
     # The datasource connection parameters
     connection_params = models.CharField(max_length=500)
@@ -48,7 +46,7 @@ class DataSource(models.Model):
         """
         try:
             param_dict = ast.literal_eval(self.connection_params)
-        except SyntaxError as ex:
+        except SyntaxError:
             msg = f"The string representation of a dict provided for connection params is invalid. " \
                   f"connection_params={self.connection_params}."
             self.__log.warning(msg)
@@ -68,16 +66,17 @@ class DataSource(models.Model):
         import pricedata.tasks as tasks  # Import here due to circular dependency.
 
         # Check if task is already scheduled
-        task_name = f"DataSource Configurator for DataSource id {self.id}."
+        task_name = f"retrieve_symbols for DataSource id {self.id}."
         scheduled_tasks = Task.objects.filter(verbose_name=task_name)
 
-        # If not already scheduled then schedule background task to configure data source.
+        # If not already scheduled then schedule background task to configure data source. Repeat daily.
         if len(scheduled_tasks) == 0:
-            tasks.DataSourceConfigure.configure(ds=self.id, verbose_name=task_name)
+            tasks.DataRetriever.retrieve_symbols(datasource_id=self.id, verbose_name=task_name, repeat=60*60*24,
+                                                 repeat_until=None)
 
     def __repr__(self):
-        return f"DataSource(name={self.name}, module={self.module}, class={self.class_name}, " \
-               f"requirements_file={self.requirements_file}, connection_params={self.connection_params})"
+        return f"DataSource(name={self.name}, pluginclass={self.pluginclass}, " \
+               f"connection_params={self.connection_params})"
 
     def __str__(self):
         return f"{self.name}"
@@ -146,13 +145,13 @@ class DataSourceCandlePeriod(models.Model):
         import pricedata.tasks as tasks  # Import here due to circular dependency.
 
         # Check if task is already scheduled
-        task_name = f"price data retriever for DataSourceCandlePeriod id {self.id}."
+        task_name = f"retrieve_prices for DataSourceCandlePeriod id {self.id}."
         scheduled_tasks = Task.objects.filter(verbose_name=task_name)
 
         # If not already scheduled then schedule background task to retrieve the data.
         if len(scheduled_tasks) == 0:
-            tasks.PriceDataRetriever.retrieve(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=60,
-                                              repeat_until=None)
+            tasks.DataRetriever.retrieve_prices(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=60,
+                                                repeat_until=None)
 
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
@@ -211,6 +210,6 @@ class Candle(models.Model):
 # Receiver to delete task when DataSourceCandlePeriod is deleted
 @receiver(post_delete, sender=DataSourceCandlePeriod)
 def delete_datasourcecandleperiod_receiver(sender, instance, using, **kwargs):
-    task_name = f"price data retriever for DataSourceCandlePeriod id {instance.id}."
+    task_name = f"retrieve_prices for DataSourceCandlePeriod id {instance.id}."
     task = Task.objects.get(verbose_name=task_name)
     task.delete()

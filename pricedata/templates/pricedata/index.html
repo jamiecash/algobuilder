@@ -1,5 +1,19 @@
-{% include "pricedata/header.html" %}
+{% extends "base.html" %}
 
-<li><a href="{% url 'pricedata:quality' %}">Pricedata Quality</a></li>
-
-{% include "pricedata/footer.html" %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+          <div class="sidebar-sticky">
+            <ul class="nav flex-column">
+              <li class="nav-item">
+                <a class="nav-link active" href="{% url 'pricedata:quality' %}">
+                   Pricedata Quality Dashboard
+                </a>
+              </li>
+            </ul>
+          </div>
+        </nav>
+    </div>
+</div>
+{% endblock content %}

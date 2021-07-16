@@ -3,11 +3,8 @@ The DataSourceImplementation interface. Subclasses will be used to connect to pr
 """
 
 import abc
-import importlib
 import logging
 import pandas as pd
-import subprocess
-import sys
 from datetime import datetime
 from typing import List, Dict
 
@@ -60,31 +57,18 @@ class DataSourceImplementation:
         :return:
         """
 
-        data_source_model = models.DataSource.objects.filter(name=name)[0]
+        datasources = models.DataSource.objects.filter(name=name)
 
-        if data_source_model.module.name != '' and data_source_model.class_name != '':
-            # Get module and class name
-            module_name = data_source_model.module.name
-            class_name = data_source_model.class_name
+        if len(datasources) != 0:
+            ds = datasources[0]
 
-            # Remove .py and replace / with .
-            module_name = module_name.replace('/', '.')
-            module_name = module_name.replace('.py', '')
-
-            # Load module and initialise class
-            try:
-                module = importlib.import_module(module_name)
-                clazz = getattr(module, class_name)
-            except NameError as ex:
-                raise DataSourceInstanceNotImplementedError(
-                    f'DataSource instance cannot be created for datasource {name}.', ex)
+            # Get plugin class
+            clazz = ds.pluginclass.plugin_class
         else:
-            raise DataSourceInstanceNotImplementedError(f'DataSource instance cannot be created for datasource {name}. '
-                                                        f'Either module or classname has not been provided. '
-                                                        f'module={data_source_model.module.name}, '
-                                                        f'classname={data_source_model.class_name}.')
+            raise DataSourceInstanceNotImplementedError(f'DataSourceImplementation instance cannot be created for '
+                                                        f'datasource {name}. Datasource could not be found.')
 
-        return clazz(data_source_model)
+        return clazz(ds)
 
     @staticmethod
     def all_instances():
@@ -99,52 +83,6 @@ class DataSourceImplementation:
             all_datasource_implementations.append(DataSourceImplementation.instance(datasource_model))
 
         return all_datasource_implementations
-
-    @staticmethod
-    def configure(datasource: models.DataSource):
-        """
-        Configure this datasource for its first use. Installs dependencies and copies symbols over to database.
-        :return:
-        """
-
-        # Install libraries in requirements file. This must be done prior to instance being created due to dependencies
-        if datasource.requirements_file.name != '':
-            try:
-                subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r',
-                                       f'{datasource.requirements_file.name}'])
-            except subprocess.CalledProcessError as ex:
-                DataSourceImplementation.__log.warning(f"Requirements for DataSource {datasource.name} could not be "
-                                                       f"installed.",  ex)
-
-        # Get symbols from instance
-        instance = DataSourceImplementation.instance(datasource.name)
-        ds_symbols = instance.get_symbols()
-
-        # Update the database. We will update in bulk due to potential volume of symbols from datasource
-        new_symbols = []
-        new_ds_symbols = []
-        for ds_symbol in ds_symbols:
-            # Get symbol if it already exists, otherwise create it
-            symbols = models.Symbol.objects.filter(name=ds_symbol['symbol_name'])
-            if len(symbols) > 0:
-                symbol = symbols[0]
-            else:
-                # Add it.
-                symbol = models.Symbol(name=ds_symbol['symbol_name'], instrument_type=ds_symbol['instrument_type'])
-                new_symbols.append(symbol)
-
-            # Create a DataSourceSymbol if it doesnt already exist
-            ds_symbols = models.DataSourceSymbol.objects.filter(datasource=datasource, symbol=symbol)
-
-            if len(ds_symbols) == 0:
-                ds_symbol = models.DataSourceSymbol(datasource=datasource, symbol=symbol)
-                new_ds_symbols.append(ds_symbol)
-
-        # Bulk create
-        DataSourceImplementation.__log.debug(f"Bulk creating {len(new_symbols)} symbols and {len(new_ds_symbols)} "
-                                             f"datasource symbol records for datasource {datasource}.")
-        models.Symbol.objects.bulk_create(new_symbols)
-        models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)
 
     @abc.abstractmethod
     def get_symbols(self) -> List[Dict[str, str]]:

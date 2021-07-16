@@ -12,6 +12,5 @@ class BootstrapDateTimePickerInput(DateTimeInput):
         attrs['class'] = 'form-control datetimepicker-input'
         context = super().get_context(name, value, attrs)
         context['widget']['datetimepicker_id'] = datetimepicker_id
-        print(f"DateTimePickerInput Context: {context}")
-        print(f"DateTimePickerInput Attrs: {attrs}")
+
         return context
