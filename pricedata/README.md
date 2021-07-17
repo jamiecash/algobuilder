@@ -6,7 +6,7 @@ To retrieve price data for AlgoBuilder, you will need to:
 * Define the periods for the price data candles to retrieve.
 
 ## Build your datasource
-A datasource is the source of the symbol and price data for your application. AlgoBuilder can currently retrieve price data from  multiple datasets.
+A datasource is the source of the symbol and price data for your application. AlgoBuilder can concurrently retrieve price data from  multiple datasources.
 
 1) Create a python class to implement the connection to your price data source. This should extend ```pricedata.datasource.DataSourceImplementation```. Any parameters required for your data source will be provided during set up and can be accessed through ```self._data_source_model.get_connection_param('param_name')```. Your datasource must implement the following methods:
    * ```get_symbols(self) -> List[Dict[str, str]]:``` This should return a list of symbols for your datasource. Each symbol is a dict containing 'symbol_name' and 'instrument_type'. A list of supported instrument_types is available in ```models.instrument_types```.
@@ -30,9 +30,7 @@ pandas~=1.3.0
 python manage.py runserver
 ```
 
-3) Load the datasource as plugin, following the instructions below:
-   
-   [Load a plugin](../plugin/README.md)
+3) Load the datasource as plugin, following the instructions for [loading a plugin](../plugin/README.md).
    
    
 4) Navagate to the datasource admin page (http://localhost:8000/admin/pricedata/datasource/).
@@ -67,3 +65,8 @@ If not already running, run the task processor to retrieving price data for all 
 ```shell
 python manage.py process_tasks
 ```
+
+## Checking data quality
+Once the AlgoBuilder processor has been running for a few days, you should have built up a good set of price data to start building your features from. You can assess the quality of your price data using the AlgoBuilder price data quality chart. Navigate to http://localhost:8000/pricedata/quality/ and select the time periods, data sources, candle periods that you want to check for. You can use the aggregation period to aggregate your price data for testing across longer date ranges. This can take a while to run depending on the amount of data to be assessed. Once complete, you will be presented with a heatmap showing the number of candles retrieved for each symbol across each aggregated period. An example has been provided below.
+
+![Price data quality dashboard](README/images/screenshot_pricedata_quality.png)

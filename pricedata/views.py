@@ -1,9 +1,18 @@
+import json
+import logging
 from collections import Counter
 from datetime import timedelta
-import time
 from typing import List, Dict
 
+from bokeh.embed import json_item
+from bokeh.io import output_file
+from bokeh.models import (BasicTicker, ColorBar, ColumnDataSource,
+                          LinearColorMapper, PrintfTickFormatter, BasicTickFormatter, )
+from bokeh.plotting import figure
+from bokeh.sampledata.unemployment1948 import data as d
+
 import pandas as pd
+from bokeh.transform import transform
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
@@ -28,10 +37,50 @@ class TestView(View):
     form_class = None
     template_name = "pricedata/test.html"
 
-    def get(self, request):
-        chartdata = [{'name': 'Jan', 'data': [[12, 100], [13, 21]]}, {'name': 'Feb', 'data': [[12, 100], [13, 21]]}]
+    # Logger
+    __log = logging.getLogger(__name__)
 
-        return render(self.request, self.template_name, {'chartdata': chartdata})
+    def get(self, request):
+        output_file("unemploymemt.html")
+
+        d.Year = d.Year.astype(str)
+        data = d.set_index('Year')
+        data.drop('Annual', axis=1, inplace=True)
+        data.columns.name = 'Month'
+
+        # reshape to 1D array or rates with a month and year for each row.
+        df = pd.DataFrame(data.stack(), columns=['rate']).reset_index()
+
+        self.__log.info(df)
+
+        source = ColumnDataSource(df)
+
+        # this is the colormap from the original NYTimes plot
+        colors = ["#75968f", "#a5bab7", "#c9d9d3", "#e2e2e2", "#dfccce", "#ddb7b1", "#cc7878", "#933b41", "#550b1d"]
+        mapper = LinearColorMapper(palette=colors, low=df.rate.min(), high=df.rate.max())
+
+        p = figure(plot_width=800, plot_height=300, title="US unemployment 1948—2016",
+                   x_range=list(data.index), y_range=list(reversed(data.columns)),
+                   toolbar_location=None, tools="", x_axis_location="above")
+
+        p.rect(x="Year", y="Month", width=1, height=1, source=source,
+               line_color=None, fill_color=transform('rate', mapper))
+
+        color_bar = ColorBar(color_mapper=mapper,
+                             ticker=BasicTicker(desired_num_ticks=len(colors)),
+                             formatter=PrintfTickFormatter(format="%d%%"))
+
+        p.add_layout(color_bar, 'right')
+
+        p.axis.axis_line_color = None
+        p.axis.major_tick_line_color = None
+        p.axis.major_label_text_font_size = "7px"
+        p.axis.major_label_standoff = 0
+        p.xaxis.major_label_orientation = 1.0
+
+        jsontxt = json.dumps(json_item(p))
+
+        return render(self.request, self.template_name, {'chart': jsontxt})
 
     def post(self, request):
         return HttpResponse("POST not supported", status=404)
@@ -45,24 +94,27 @@ class QualityView(View):
 
     """
 
+    # Logger
+    __log = logging.getLogger(__name__)
+
     form_class = PriceDataQualityForm
     template_name = 'pricedata/quality.html'
 
     def get(self, request):
         # Get chart data for initial values
-        chart_data = QualityView.get_chart_data(self.initial)
+        chart_data = QualityView.get_charts(self.initial)
 
         return render(self.request, self.template_name, {'form': self.form_class(initial=self.initial),
-                                                         'data': chart_data})
+                                                         'charts': chart_data})
 
     def post(self, request):
         # Get form from POST and check whether it's valid:
         form = self.form_class(request.POST)
         if form.is_valid():
             # Get chart data
-            chart_data = QualityView.get_chart_data(form.cleaned_data)
+            chart_data = QualityView.get_charts(form.cleaned_data)
 
-            return render(self.request, self.template_name, {'form': self.form_class, 'data': chart_data})
+            return render(self.request, self.template_name, {'form': self.form_class, 'charts': chart_data})
         else:
             return HttpResponse("Invalid form", status=404)
 
@@ -99,9 +151,9 @@ class QualityView(View):
         return initial
 
     @staticmethod
-    def get_chart_data(params: Dict) -> Dict[str, List]:
+    def get_charts(params: Dict) -> Dict[str, List]:
         """
-        Gets the chart data
+        Gets the charts
         :param params: Dict containing:
             from_date: The from date for the chart.
             to_date: The from date for the chart.
@@ -126,8 +178,7 @@ class QualityView(View):
         scale will not be possible. The chart should be used to compare quality at different dates / times and across
         different datasources.
 
-        :return: Dict containing datasource name and its chart data. Chart data should contain 3 columns for plotting:
-            x; y; & z.
+        :return: Dict[datasource_name: List(chart JSON text, footnote)].
         """
         chart_data = {}
 
@@ -141,31 +192,51 @@ class QualityView(View):
 
             # convert to dataframe.
             df = pd.DataFrame(list(price_data.values('datasource_symbol__symbol__name', 'time')))
-
+            
             # Aggregate data.
             if len(df.index) > 0:
                 rules = {'minutes': 'T', 'hours': 'H', 'days': 'D', 'weeks': 'W', 'months': 'M'}
                 agg_df = df.groupby([pd.Grouper(key='time', freq=rules[params['aggregation_period']]),
                                      'datasource_symbol__symbol__name']).size().reset_index(name='count')
 
-                # Count needs to be a % of max, rather than actual for heatmap chart
-                agg_df['count'] = agg_df['count'] / maxagg[params['aggregation_period']] * 100
+                # Convert time to str
+                agg_df['time'] = agg_df['time'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-                # We need to convert to a string format that apexcharts can read.
-                ds_chart_data = []
-                all_symbols = agg_df['datasource_symbol__symbol__name'].drop_duplicates()
-                for symbol in all_symbols:
-                    symbol_df = agg_df[agg_df['datasource_symbol__symbol__name'] == symbol]
-                    symbol_plot_data = []
-                    for index, row in symbol_df.iterrows():
-                        jstime = int(time.mktime(row["time"].timetuple())) * 1000
-                        chartplot = [jstime, row['count']]
-                        symbol_plot_data.append(chartplot)
+                # Generate heatmap chart. Colours range from green to red using range to max agg lookup for
+                # aggregation_period
+                source = ColumnDataSource(agg_df)
+                QualityView.__log.debug(f"Producing JSON data for heatmap using source data: {source.data}")
+                colors = ["#B21F35", "#D82735", "#FF7435", "#FFA135", "#FFCB35", "#FFF735", "#16DD36", "#009E47",
+                          "#00753A"]
+                mapper = LinearColorMapper(palette=colors, low=0, high=maxagg[params['aggregation_period']])
 
-                    symbol_plots = {'name': symbol, 'data': symbol_plot_data}
-                    ds_chart_data.append(symbol_plots)
+                p = figure(title=f"Prices available by time period and symbol for {ds}",
+                           x_range=agg_df['time'].drop_duplicates(),
+                           y_range=agg_df['datasource_symbol__symbol__name'].drop_duplicates(),
+                           toolbar_location=None, tools="", x_axis_location="above")
 
-                # Add the dataframes to the data
-                chart_data[ds] = ds_chart_data
+                p.rect(x="time", y="datasource_symbol__symbol__name", width=1, height=1, source=source, line_color=None,
+                       fill_color=transform('count', mapper))
+
+                color_bar = ColorBar(color_mapper=mapper,
+                                     ticker=BasicTicker(desired_num_ticks=len(colors)),
+                                     formatter=BasicTickFormatter())
+
+                p.add_layout(color_bar, 'right')
+
+                p.axis.axis_line_color = None
+                p.axis.major_tick_line_color = None
+                p.axis.major_label_text_font_size = "7px"
+                p.axis.major_label_standoff = 0
+                p.xaxis.major_label_orientation = 1.0
+
+                jsontxt = json.dumps(json_item(p))
+
+                QualityView.__log.debug(f"Produced JSON text for graph: {jsontxt}")
+
+                # Add the json text and rowcount to the pre aggregated data
+                footnote = f"{len(df.index):,} price candles represented. {len(agg_df.index):,} aggregated rows " \
+                           f"plotted."
+                chart_data[ds] = [jsontxt, footnote]
 
             return chart_data

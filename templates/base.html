@@ -16,9 +16,11 @@
         <!-- Load site wide stylesheets -->
         <script src="{% static "algobuilder/css/algobuilder.css" %}"></script>
 
-        <!-- Need jquery here, doesn't work when installed at bottom with other JS -->
+        <!-- Need some JS here, these don't work work when installed at bottom with other JS -->
         <script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
-        <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-2.3.3.min.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-widgets-2.3.3.min.js" crossorigin="anonymous"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-tables-2.3.3.min.js" crossorigin="anonymous"></script>
 
         <!-- favicon -->
         <link rel="shortcut icon" type="image/png" href="{% static 'img/favicon.ico' %}"/>
