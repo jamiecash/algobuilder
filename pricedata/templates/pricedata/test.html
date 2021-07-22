@@ -1,9 +1,5 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <script>
-        html = {{ chart|safe }}
-        Bokeh.embed.embed_item(html, "myplot");
-    </script>
-    <div id="myplot"></div>
+    {{ test_text|safe }}
 {% endblock content %}

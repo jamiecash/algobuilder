@@ -51,7 +51,7 @@ A screenshot for our above example has been provided below.
      
 ![Add datasource screenshot](README/images/screenshot_add_datasource.png)
     
-Your datasource will now be configured. All symbols from your datasource will be available in this application.
+Your datasource will now be configured. All symbols from your datasource will be available in this application. AlgoBuilder will start retrieving price data for all symbols.
 
 ## Selecting symbols to retrieve
 Once your datasources have been configured, all symbols for all datasources will be available in your application. A symbol exists only once across all data sources, i.e., multiple datasources can share the same symbol. You can edit your symbols to change their instrument type and set whether price data will be retrieved from a data source for that symbol.
@@ -59,12 +59,6 @@ Once your datasources have been configured, all symbols for all datasources will
 Your data source implementation should have correctly populated the instrument type, however if not, this can be changed in the 'symbol' admin page. http://localhost:8000/admin/pricedata/symbol/
 
 You can select whether price data will be retrieved for each symbol for each data source from the 'datasourcesymbol' admin page. http://localhost:8000/admin/pricedata/datasourcesymbol/ . Price data can be retrieved for each symbol from any number of data sources. Use the filters and search available symbols in the admin page to quickly find and select symbols by their name or instrument type. You can set and unset the retrieve price data flag for all selected symbols using the actions box at the top of the page.
-
-## Start retrieving price data
-If not already running, run the task processor to retrieving price data for all selected symbols.
-```shell
-python manage.py process_tasks
-```
 
 ## Checking data quality
 Once the AlgoBuilder processor has been running for a few days, you should have built up a good set of price data to start building your features from. You can assess the quality of your price data using the AlgoBuilder price data quality chart. Navigate to http://localhost:8000/pricedata/quality/ and select the time periods, data sources, candle periods that you want to check for. You can use the aggregation period to aggregate your price data for testing across longer date ranges. This can take a while to run depending on the amount of data to be assessed. Once complete, you will be presented with a heatmap showing the number of candles retrieved for each symbol across each aggregated period. An example has been provided below.

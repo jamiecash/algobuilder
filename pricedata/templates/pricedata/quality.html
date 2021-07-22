@@ -10,6 +10,9 @@
                     <ul class="list-group">
                       <li class="list-group-item">
                           <h1 class="h2">Filters</h1>
+                          {% if form.errors %}
+                            <div class="invalid-feedback">{{ form.errors }}</div>
+                          {% endif %}
                       </li>
                       <li class="list-group-item">
                         <div class="form-group">
@@ -57,12 +60,21 @@
                 {% if charts %}
                     {% for ds, chart in charts.items %}
                         <script>
-                            html = {{ chart.0|safe }}
+                            html = {{ chart|safe }}
                             Bokeh.embed.embed_item(html, "chart_".concat('{{ ds }}'));
                         </script>
                         <div class="row" id=chart_{{ ds }}></div>
-                        <div class=".font-small row">{{ chart.1|safe }}</div>
                     {% endfor %}
+                {% else %}
+                    <p>No data available.</p>
+                {% endif %}
+            </div>
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
+                <h1 class="h2 row">Data Quality Summary</h1>
+            </div>
+            <div>
+                {% if summary_data %}
+                    {{ summary_data|safe }}
                 {% else %}
                     <p>No data available.</p>
                 {% endif %}
