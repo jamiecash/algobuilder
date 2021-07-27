@@ -4,8 +4,10 @@ from background_task import background
 from datetime import timedelta
 from django.db.models import Max
 from django.utils import timezone
+from django.db import connection, transaction
 
 from pricedata import datasource
+from pricedata.models import Candle
 
 
 class DataRetriever:
@@ -66,20 +68,13 @@ class DataRetriever:
 
                 # Get last candle for period / symbol / datasource saved. If there is one then our from_date will be the
                 # candle time + 1ms. If there isn't one, our from_date will be the DataSourcePeriodCandles start_from
-                # date. We will need the id of the last candle for update.
+                # date.
                 from_date = ds_pc.start_from
-                last_candle_time = models.Candle.objects.filter(datasource_symbol=datasource_symbol, period=ds_pc.period).\
-                    aggregate(Max('time'))['time__max']
-                last_candle_id = None
+                last_candle_time = models.Candle.objects.filter(datasource_symbol=datasource_symbol,
+                                                                period=ds_pc.period).aggregate(Max('time'))['time__max']
 
                 if last_candle_time is not None:
                     from_date = last_candle_time + timedelta(milliseconds=1)
-                    last_candles = models.Candle.objects.filter(datasource_symbol=datasource_symbol,
-                                                                period=ds_pc.period, time=last_candle_time)
-
-                    # There should be exactly 1. Get the id
-                    assert len(last_candles) == 1
-                    last_candle_id = last_candles[0].id
 
                 # To date is now.
                 to_date = timezone.now()
@@ -89,33 +84,22 @@ class DataRetriever:
                 log.debug(f"{len(data.index)} {ds_pc.period} candles retrieved from {ds_pc.datasource.name} for "
                           f"{symbol} to {to_date}.")
 
-                # Prepare the dataframe for bulk update by adding the datasource symbol.
-                data['datasource_symbol'] = datasource_symbol
+                # Prepare the dataframe for bulk upsert by adding the datasource symbol.
+                data['datasource_symbol_id'] = datasource_symbol.id
 
-                # We may have a row for the last candle time if our datasource resampled. This should be updated
-                # rather than created. Update row needs an id. There should not be more than one.
-                update_rows = data[data['time'] == last_candle_time]
-                if len(update_rows.index) == 1:
-                    update_candle = models.Candle.objects.get(id=last_candle_id)
-                    update_candle.bid_open = update_rows['bid_open'].iloc[0]
-                    update_candle.bid_high = update_rows['bid_high'].iloc[0]
-                    update_candle.bid_low = update_rows['bid_low'].iloc[0]
-                    update_candle.bid_close = update_rows['bid_close'].iloc[0]
-                    update_candle.ask_open = update_rows['ask_open'].iloc[0]
-                    update_candle.ask_high = update_rows['ask_high'].iloc[0]
-                    update_candle.ask_low = update_rows['ask_low'].iloc[0]
-                    update_candle.ask_close = update_rows['ask_close'].iloc[0]
-                    update_candle.volume = update_rows['volume'].iloc[0]
-                    update_candle.save()
-
-                # Split out the create rows and bulk create
-                create_rows = data[data['time'] != last_candle_time]
-                models.Candle.objects.bulk_create(
-                    models.Candle(**vals) for vals in create_rows.to_dict('records')
-                )
+                # Update or insert. Define the fields used for insert, the fields used for update and get the data as a
+                # list of tuples
+                create_fields = ['time', 'period', 'bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open',
+                                 'ask_high', 'ask_low', 'ask_close', 'volume', 'datasource_symbol_id']
+                update_fields = ['bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open', 'ask_high', 'ask_low',
+                                 'ask_close', 'volume']
+                unique_fields = ['datasource_symbol_id', 'time', 'period']
+                values = [tuple(x) for x in data.to_numpy()]
+                DataRetriever.__bulk_insert_or_update(create_fields=create_fields, update_fields=update_fields,
+                                                      unique_fields=unique_fields, values=values)
         else:
             # Inactive
-            log.debug(f"Task running for inactive DataSourceCandlePeriod {ds_pc}.")
+            log.debug(f"Task running for DataSourceCandlePeriod {ds_pc}.")
 
     @staticmethod
     def retrieve_symbols_impl(datasource_id):
@@ -161,3 +145,39 @@ class DataRetriever:
 
         models.Symbol.objects.bulk_create(new_symbols)
         models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)
+
+    @staticmethod
+    def __bulk_insert_or_update(create_fields, update_fields, unique_fields, values):
+        """
+        Bulk insert or update (upsert) of price data. If pk already exists, then update else insert
+
+        :param create_fields: Fields for insert
+        :param update_fields: Fields to update on update
+        :param unique_fields: Fields that will raise the unique key constraint on insert
+        :param values: list of tuples containing values
+        :return:
+        """
+
+        cursor = connection.cursor()
+        db_table = Candle.objects.model._meta.db_table
+
+        # Mogrify values to bind into sql.
+        mogvals = [cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", val).decode('utf8') for val in values]
+
+        # Build list of x = excluded.x columns for SET part of sql
+        on_duplicates = []
+        for field in update_fields:
+            on_duplicates.append(field + "=excluded." + field)
+
+        # SQL
+        sql = f"INSERT INTO {db_table} ({','.join(list(create_fields))}) VALUES {','.join(mogvals)} " \
+              f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
+
+        cursor.execute(sql)
+        cursor.close()
+
+
+
+
+
+

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pandas as pd
 
 from background_task import models as task_model
@@ -161,8 +163,52 @@ class DataRetrieverTests(TestCase):
             ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol, retrieve_price_data=True)
             ds_symbol.save()
 
-        # Run retrieve_prices_impl. We should have the mock data populated for all symbols. 25 in total, 5 rows for 5 symbols
+        # Run retrieve_prices_impl. We should have the mock data populated for all symbols. 25 in total, 5 rows for
+        # 5 symbols
         tasks.DataRetriever.retrieve_prices_impl(datasource_candleperiod_id=dscp.id)
         candles = models.Candle.objects.all()
-        self.assertTrue(len(candles) == 25)
+        self.assertEquals(len(candles), 25)
+
+    @patch('pricedata.datasource.DataSourceImplementation')
+    def test_existing_prices(self, mock):
+        """
+        Test that prices that already exist in DB are updated rather than inserted
+        """
+        # Create some mock prices in a dataframe
+        columns = ['time', 'period', 'bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open', 'ask_high',
+                   'ask_low', 'ask_close', 'volume']
+        data = []
+        for i in range(0, 5):
+            amt = Decimal(i)
+            data.append([timezone.now() + timedelta(seconds=i), '1S', amt, amt, amt, amt, amt, amt, amt, amt, i])
+        mock_prices = pd.DataFrame(columns=columns, data=data)
+
+        # Mock the instance method of DataSourceImplementation to return a new mock
+        datasource_subclass_mock = MagicMock()
+        mock.instance.return_value = datasource_subclass_mock
+
+        # Mock the subclasses get_prices method to return our mock dataframe
+        datasource_subclass_mock.get_prices.return_value = mock_prices
+
+        # Create a data source and datasourcecandleperiod model.
+        ds = models.DataSource(id=5, name='test', pluginclass=self.plugin_class)
+        ds.save()
+        dscp = models.DataSourceCandlePeriod(datasource=ds, period='1S', start_from=timezone.now(), active=True)
+        dscp.save()
+
+        # Create symbol and datasourcesymbols
+        symbol = models.Symbol(name=f'TestSymbol')
+        symbol.save()
+        ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol, retrieve_price_data=True)
+        ds_symbol.save()
+
+        # Run retrieve_prices_impl. We should have the mock data populated for symbols. 5 prices
+        tasks.DataRetriever.retrieve_prices_impl(datasource_candleperiod_id=dscp.id)
+
+        # Run it again. These should be duplicate, so should be updated.
+        tasks.DataRetriever.retrieve_prices_impl(datasource_candleperiod_id=dscp.id)
+
+        # We should have 5 candles as the first 5 should have been updated
+        candles = models.Candle.objects.all()
+        self.assertEquals(len(candles), 5)
 

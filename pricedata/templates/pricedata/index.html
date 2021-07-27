@@ -3,17 +3,44 @@
 {% block content %}
 <div class="container-fluid">
     <div class="row">
-        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+        <nav class="col-md-2 bg-light sidebar">
           <div class="sidebar-sticky">
             <ul class="nav flex-column">
+              <li class="nav-item">
+                <a class="nav-link active" href="{% url 'pricedata:metrics' %}">
+                   Pricedata Metrics
+                </a>
+              </li>
               <li class="nav-item">
                 <a class="nav-link active" href="{% url 'pricedata:quality' %}">
                    Pricedata Quality Dashboard
                 </a>
               </li>
+              <li class="nav-item">
+                <a class="nav-link active" href="{% url 'pricedata:candles' %}">
+                   OHLC Price Candles for Symbol
+                </a>
+              </li>
             </ul>
           </div>
         </nav>
+        <main class="col-md-10">
+            <h2 class="h2 row">Price Data</h2>
+            <div class="row">
+                The views in this application are designed to enable you to assess the quality of the price data retrieved from your datasources. Some of these views will retrieve and analyse extremely large volumes of data and can take a while to run.
+            </div>
+            <ul>
+                <li class="text">
+                    <a class="" href="{% url 'pricedata:metrics' %}">Pricedata Metrics</a> provides first and last retrieved dates for all active symbols along with the minimum, maximum and count of candles retrieved for each aggregated period.
+                </li>
+                <li class="text">
+                    <a class="" href="{% url 'pricedata:quality' %}">Pricedata Quality Dashboard</a> provides a heatmap chart showing the number of candles available for each aggregation period. Date ranges can be selected on the chart to enable you to drill down into more granular aggregations of the price data and identify any unexpected gaps.
+                </li>
+                <li>
+                    <a class="" href="{% url 'pricedata:candles' %}">OHLC Price Candles for Symbol</a> shows the price candles for the selected symbol for the selected date range.
+                </li>
+            </ul>
+        </main>
     </div>
 </div>
 {% endblock content %}

@@ -1,83 +1,25 @@
-import functools
 import json
 import logging
 from collections import Counter
+from datetime import timedelta
 from typing import Dict
 
 from bokeh.embed import json_item
 from bokeh.models import (BasicTicker, ColorBar, ColumnDataSource,
-                          LinearColorMapper, BasicTickFormatter, BoxSelectTool, CustomJS, )
+                          LinearColorMapper, BasicTickFormatter, BoxSelectTool, CustomJS, HoverTool,
+                          DatetimeTickFormatter, CDSView, BooleanFilter, )
 from bokeh.plotting import figure
 from bokeh.transform import transform
 
 import pandas as pd
-from django.core.cache import caches, InvalidCacheBackendError
 from django.db import connection
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.utils import timezone
 from django.views import View
 
-from pricedata import models
-from pricedata.forms import PriceDataQualityForm
-
-
-class Cache(object):
-    """
-    Decorator to retrieve output from price_data cache if it exists. If it doesn't it will retrieve from decorated
-    function and store in cache.
-
-    Dependency: Django must be set up with caching
-
-    :return:
-    """
-
-    # Logger
-    __log = logging.getLogger(__name__)
-
-    # Cache name.
-    __cache_name = 'price_data'
-
-    # Wrapped function
-    __func = None
-
-    def __init__(self, func):
-        functools.update_wrapper(self, func)
-        self.__func = func
-
-    def __call__(self, *args, **kwargs):
-        # Check if it exists in the cache, if not, run the func and store output in cache, else retrieve
-        # from cache
-
-        # Session key is func name and passed parameters with spaces and control characters removed and reduced to
-        # 200 characters max
-        cache_key = f"{self.__func.__name__}_{','.join([f'{x}' for x in args])}_" \
-                      f"{','.join([f'{x}={kwargs[x]}' for x in kwargs.keys()])}"
-        for char in [" ", "\n"]:
-            cache_key = cache_key.replace(char, "")
-        cache_key = cache_key[0:200] if len(cache_key) > 200 else cache_key
-
-        # Try and get from cache. If it doesnt exist in cache, then return from wrapped function.
-        try:
-            cache = caches[self.__cache_name]
-
-            # Get from cache if it exists
-            json_txt = cache.get(cache_key, None)
-
-            if json_txt is not None:
-                self.__log.debug(f"Retrieved {cache_key} from cache.")
-                ret = pd.read_json(json_txt, orient='table')
-            else:
-                self.__log.debug(f"Retrieving {cache_key} from function.")
-                ret = self.__func(self, *args, **kwargs)
-
-                # Save it in cache as JSON
-                cache.set(cache_key, ret.to_json(orient='table'))
-        except InvalidCacheBackendError as ex:
-            # If cache doesnt exist, or there was an error , we will retrieve from the wrapped function.
-            self.__log.debug(f"Retrieving {cache_key} from function. Error accessing cache", ex)
-            ret = self.__func(self, *args, **kwargs)
-
-        return ret
+from algobuilder.utils import django_cache
+from pricedata import models, forms
 
 
 class IndexView(View):
@@ -105,32 +47,113 @@ class TestView(View):
         return HttpResponse("POST not supported", status=404)
 
 
-class QualityView(View):
+class MetricsView(View):
     """
-    The data quality scatter plot
-
-    The populated form will be retrieved from the request.POST and will contain the following values:
-
+    Data metrics
     """
 
     # Logger
     __log = logging.getLogger(__name__)
 
-    form_class = PriceDataQualityForm
-    template_name = 'pricedata/quality.html'
-
-    # We will store the request. It will be used by the session cache decorator to retrieve data from the session
-    # instead of the wrapped function for decorated functions.
-    __request = None
+    form_class = forms.PriceDataMetricsForm
+    template_name = 'pricedata/metrics.html'
 
     def get(self, request):
-        # Store the request
-        self.__request = request
+        # Initial params for chart
+        initial_params = {'data_source': 'all', 'candle_period': ViewData.get_most_used_period()}
 
         # Get summary data
-        data = self.__retrieve_price_data(self.__initial_period)
-        summarised_data = self.__summarise_data(data)
-        formatted_data = self.__format_data(summarised_data)
+        data = ViewData().retrieve_price_data(initial_params['candle_period'])
+        summarised_data = ViewData().summarise_data(data)
+        formatted_data = MetricsView.__format_data(summarised_data=summarised_data,
+                                                   datasource_name=initial_params['data_source'])
+
+        return render(self.request, self.template_name,
+                      {'form': self.form_class(initial=initial_params),
+                       'summary_data': formatted_data,
+                       'datasource': initial_params['data_source']})
+
+    def post(self, request):
+        # Get form from POST and check whether it's valid:
+        form = self.form_class(request.POST)
+        if form.is_valid():
+            # Cleaned data
+            form_data = form.cleaned_data
+
+            # Get summary data
+            data = ViewData().retrieve_price_data(form_data['candle_period'])
+            summarised_data = ViewData().summarise_data(data)
+            formatted_data = MetricsView.__format_data(summarised_data=summarised_data,
+                                                       datasource_name=form_data['data_source'])
+
+            return render(self.request, self.template_name,
+                          {'form': self.form_class(initial=form_data),
+                           'summary_data': formatted_data,
+                           'datasource': form_data['data_source']})
+
+        else:
+            return HttpResponse("Invalid form", status=404)
+
+    @staticmethod
+    def __format_data(summarised_data: pd.DataFrame, datasource_name: str = 'all') -> str:
+        """
+        Returns the HTML for the provided summary data. Formats as required for display.
+
+        :param summarised_data: A dataframe containing the summary data
+        :param datasource_name: The name of the datasource to produce the summary data for. 'all' will produce the
+            summarised data across all datasources.
+
+        :return: html as string
+        """
+
+        display = summarised_data
+
+        # Merge the agg functions for datasource into cells for each aggregation period
+        for agg in ['minutes', 'hours', 'days', 'weeks', 'months']:
+            # Get the min, max and avg columns and consolidate into a new column. Drop the existing ones.
+            min_col = f'{agg}_min_{datasource_name}'
+            max_col = f'{agg}_max_{datasource_name}'
+            avg_col = f'{agg}_avg_{datasource_name}'
+            display[agg] = 'min:' + display[min_col].astype(str) + ' max:' + display[max_col].astype(
+                str) + ' avg:' + display[avg_col].astype(str)
+
+        # Rename the columns that we will be keeping
+        display = display.rename(
+            columns={'symbol': 'Symbol', 'instrument_type': 'Instrument Type',
+                     f'first_{datasource_name}': 'First Price',
+                     f'last_{datasource_name}': 'Last Price', 'minutes': 'Minutes', 'hours': 'Hours', 'days': 'Days',
+                     'weeks': 'Weeks',
+                     'months': 'Months'})
+
+        # Reorder the columns, excluding any that we dont want to keep
+        display = display[
+            ['Symbol', 'Instrument Type', 'First Price', 'Last Price', 'Minutes', 'Hours', 'Days', 'Weeks',
+             'Months']]
+
+        # Convert to HTML. Then set style for thead. We wont set the table style through the to_html method as this will
+        # keep the default dataframe style.
+        html = display.to_html(index=False)
+        html = html.replace("<thead>", '<thead class="table-dark">')
+        html = html.replace('class="dataframe"', 'class="table table-striped"')
+
+        return html
+
+
+class QualityView(View):
+    """
+    The data quality scatter plot
+    """
+
+    # Logger
+    __log = logging.getLogger(__name__)
+
+    form_class = forms.PriceDataQualityForm
+    template_name = 'pricedata/quality.html'
+
+    def get(self, request):
+        # Get summary data
+        data = ViewData().retrieve_price_data(ViewData.get_most_used_period())
+        summarised_data = ViewData().summarise_data(data)
 
         # Initial params for chart
         initial_params = QualityView.__get_initial_form_values(summarised_data)
@@ -140,13 +163,9 @@ class QualityView(View):
 
         return render(self.request, self.template_name,
                       {'form': self.form_class(initial=initial_params),
-                       'summary_data': formatted_data,
                        'charts': charts})
 
     def post(self, request):
-        # Store the request
-        self.__request = request
-
         # Get form from POST and check whether it's valid:
         form = self.form_class(request.POST)
         if form.is_valid():
@@ -154,9 +173,8 @@ class QualityView(View):
             form_data = form.cleaned_data
 
             # Get summary data
-            data = self.__retrieve_price_data(form_data['candle_period'])
-            summarised_data = self.__summarise_data(data)
-            formatted_data = self.__format_data(summarised_data)
+            data = ViewData.retrieve_price_data(form_data['candle_period'])
+            summarised_data = ViewData.summarise_data(data)
 
             # Get the best aggregation period for the new from and to dates
             form_data['aggregation_period'] = \
@@ -167,25 +185,10 @@ class QualityView(View):
 
             return render(self.request, self.template_name,
                           {'form': self.form_class(initial=form_data),
-                           'summary_data': formatted_data,
                            'charts': charts})
 
         else:
             return HttpResponse("Invalid form", status=404)
-
-    @property
-    def __initial_period(self) -> str:
-        """
-        Returns the initial candle period for the dashboard. This will be the period that is common across the largest
-        number of datasources
-        :return: period
-        """
-        datasources = [ds.name for ds in models.DataSource.objects.all()]
-        periods = [dscp.period for dscp in
-                   models.DataSourceCandlePeriod.objects.filter(datasource__name__in=datasources)]
-        most_used_period = None if len(periods) == 0 else Counter(periods).most_common(1)[0][0]
-
-        return most_used_period
 
     @staticmethod
     def __get_initial_form_values(summarised_data: pd.DataFrame) -> Dict:
@@ -198,7 +201,7 @@ class QualityView(View):
         # Datasources will be all. Period will have already been used to create the summary data, but will be set again.
         initial = {'from_date': summarised_data['first_all'].min(), 'to_date': summarised_data['last_all'].max(),
                    'data_sources': [ds.name for ds in models.DataSource.objects.all()],
-                   'candle_period': QualityView.__initial_period}
+                   'candle_period': ViewData.get_most_used_period()}
 
         # Aggregation period will be the best aggregation period to end up with ~100 plots
         initial['aggregation_period'] = \
@@ -292,12 +295,23 @@ class QualityView(View):
                           "#00753A"]
                 mapper = LinearColorMapper(palette=colors, low=0, high=max_agg)
 
-                tool = BoxSelectTool(dimensions='width',
-                                     description='Select chart area to drill down into more granular time periods.')
+                # Select tool to drill down into more granular period, and hover tool to show time, symbol and count on
+                # mouseover
+                select = BoxSelectTool(dimensions='width',
+                                       description='Select chart area to drill down into more granular time periods.')
+
+                hover = HoverTool()
+
+                # Display date and symbol for hover
+                tooltips = [
+                    ("Symbol / Time", "@symbol, @time"),
+                    ("Num Candles", "@count"),
+                ]
+
                 p = figure(title=f"Prices available by time period and symbol for {ds}",
-                           x_range=aggregated_data['time'].drop_duplicates(),
+                           plot_width=1000, x_range=aggregated_data['time'].drop_duplicates(),
                            y_range=aggregated_data['symbol'].drop_duplicates(),
-                           toolbar_location='below', tools=[tool],
+                           toolbar_location='below', tools=[hover, select], tooltips=tooltips,
                            x_axis_location="above")
 
                 p.rect(x="time", y="symbol", width=1, height=1, source=source, line_color=None,
@@ -354,8 +368,161 @@ class QualityView(View):
 
             return chart_htmls
 
-    @Cache
-    def __retrieve_price_data(self, period: str) -> pd.DataFrame:
+
+class CandlesView(View):
+    """
+    OHLC Candle chart
+    """
+
+    # Logger
+    __log = logging.getLogger(__name__)
+
+    form_class = forms.PriceDataCandleForm
+    template_name = 'pricedata/candles.html'
+
+    def get(self, request):
+        # Initial params for chart. 1st datasource and period. No dates or symbol.
+        to_date = timezone.now()
+        from_date = to_date - timedelta(hours=1)
+
+        # Initial params. Datasource candle period is set on form as first item in list. This saves retrieving the data
+        # here again.
+        initial_params = {'from_date': from_date, 'to_date': to_date}
+
+        return render(self.request, self.template_name,
+                      {'form': self.form_class(initial=initial_params)})
+
+    def post(self, request):
+        # Get form from POST and check whether it's valid:
+        form = self.form_class(request.POST)
+        if form.is_valid():
+            # Cleaned data
+            form_data = form.cleaned_data
+
+            # Get the data source candle period so that we can use the data source and period to get the right candle
+            dscp_id = form_data['datasource_period']
+            dscp = models.DataSourceCandlePeriod.objects.get(pk=dscp_id)
+
+            # Get candle data
+            candles = models.Candle.objects.filter(datasource_symbol__datasource=dscp.datasource,
+                                                   period=dscp.period,
+                                                   time__gte=form_data['from_date'],
+                                                   time__lte=form_data['to_date'],
+                                                   datasource_symbol__symbol__name=form_data['symbol']
+                                                   )
+
+            candle_data = pd.DataFrame(list(candles.values('datasource_symbol__symbol__name', 'time', 'bid_open',
+                                                           'bid_high', 'bid_low', 'bid_close', 'ask_open', 'ask_high',
+                                                           'ask_low', 'ask_close', 'volume')))
+
+            # Get the chart
+            chart = self.__create_chart(candle_data)
+
+            return render(self.request, self.template_name,
+                          {'form': self.form_class(initial=form_data),
+                           'symbol': form_data['symbol'],
+                           'chart': chart})
+
+        else:
+            return HttpResponse("Invalid form", status=404)
+
+    @staticmethod
+    def __create_chart(candle_data: pd.DataFrame, bid_or_ask: str = 'ask') -> str:
+        """
+        Creates the OHLC price data candle chart from the supplied candle data
+        :param candle_data: The candle data containing the OHLC data for the chart
+        :param bid_or_ask: Whether to use bid or ask prices. Default is ask
+
+        :return: chart JSON HTML.
+        """
+        chart_html = {}
+
+        # Convert time to str
+        # candle_data['time'] = candle_data['time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Only create chart if we have some data
+        if candle_data is not None and len(candle_data.index) > 0:
+            # Get the symbol for the first cell
+            symbol = candle_data['datasource_symbol__symbol__name'][0]
+
+            # We will make it easy for ourselves later by adding OHLC columns using the existing bid or ask OHLC columns
+            # depending on bid_or_ask param
+            candle_data['open'] = candle_data[f'{bid_or_ask}_open']
+            candle_data['high'] = candle_data[f'{bid_or_ask}_high']
+            candle_data['low'] = candle_data[f'{bid_or_ask}_low']
+            candle_data['close'] = candle_data[f'{bid_or_ask}_close']
+
+            # Generate candle chart.
+            source = ColumnDataSource(candle_data)
+            CandlesView.__log.debug(f"Producing JSON data for candle chart for symbol {symbol} using source data: "
+                                    f"{source.data}")
+
+            # Date formatter. Used on axis
+            dtfmt = DatetimeTickFormatter(days='%Y-%m-%d', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M', minutes='%Y-%m-%d %H:%M:%S',
+                                          seconds='%Y-%m-%d %H:%M:%S')
+
+            # Display date and OHLCV values for hover
+            hover = HoverTool(
+                tooltips=[
+                    ("Time", "@time{'%Y-%m-%d %H:%M:%S'}"),
+                    ("Open", "@open"),
+                    ("High", "@high"),
+                    ("Low", "@low"),
+                    ("Close", "@close"),
+                    ("Volume", "@volume"),
+                ],
+
+                formatters={
+                    '@time': 'datetime'
+                },
+                mode='mouse'
+            )
+
+            p = figure(plot_width=1000, x_axis_type="datetime", toolbar_location='below', tools=[hover],
+                       x_axis_location="above", )
+
+            # Format date
+            p.xaxis[0].formatter = dtfmt
+
+            # Candle wick, high to low
+            p.segment(source=source, x0='time', y0='high', x1='time', y1='low', color="black")
+
+            # Width will be the number of milliseconds between the times - 10% for spacing
+            width = (candle_data['time'][1] - candle_data['time'][0]).total_seconds() * 1000 * .9
+
+            # Candle colour will depend on whether it has increased or decreased between open and close
+            inc = CDSView(source=source, filters=[BooleanFilter(source.data['close'] > source.data['open'])])
+            dec = CDSView(source=source, filters=[BooleanFilter(source.data['open'] > source.data['close'])])
+
+            p.vbar(source=source, view=inc, x='time', top='open', bottom='close', width=width, fill_color="#D5E1DD",
+                   line_color="black")
+            p.vbar(source=source, view=dec, x='time', top='open', bottom='close', width=width, fill_color="#F2583E",
+                   line_color="black")
+
+            p.axis.axis_line_color = None
+            p.axis.major_tick_line_color = None
+            p.axis.major_label_text_font_size = "7px"
+            p.axis.major_label_standoff = 0
+            p.xaxis.major_label_orientation = 1.0
+            p.grid.grid_line_alpha = 0.3
+
+            json_txt = json.dumps(json_item(p))
+
+            CandlesView.__log.debug(f"Produced JSON text for {symbol} graph: {json_txt}")
+
+            # Add the json html
+            chart_html = json_txt
+
+        return chart_html
+
+
+class ViewData:
+    """
+    A class to retrieve and summarise the data required in the price data views
+    """
+
+    @django_cache(cache_name='price_data')
+    def retrieve_price_data(self, period: str) -> pd.DataFrame:
         """
         Retrieves the price data.
 
@@ -364,22 +531,22 @@ class QualityView(View):
         :return: DataFrame containing price data
         """
         sql = """SELECT	s.name AS symbol,
-                    s.instrument_type AS instrument_type,
-                    ds.name AS datasource,
-                    cdl.time AS time
-            FROM public.pricedata_datasourcesymbol dss
-                INNER JOIN pricedata_datasource ds ON dss.datasource_id = ds.id
-                INNER JOIN pricedata_symbol s ON dss.symbol_id = s.id
-                INNER JOIN pricedata_candle cdl ON cdl.datasource_symbol_id = dss.id  
-            WHERE dss.retrieve_price_data = true
-                AND cdl.period = %(period)s"""
+                        s.instrument_type AS instrument_type,
+                        ds.name AS datasource,
+                        cdl.time AS time
+                FROM public.pricedata_datasourcesymbol dss
+                    INNER JOIN pricedata_datasource ds ON dss.datasource_id = ds.id
+                    INNER JOIN pricedata_symbol s ON dss.symbol_id = s.id
+                    INNER JOIN pricedata_candle cdl ON cdl.datasource_symbol_id = dss.id  
+                WHERE dss.retrieve_price_data = true
+                    AND cdl.period = %(period)s"""
 
         price_data = pd.read_sql_query(sql=sql, con=connection, params={'period': period})
 
         return price_data
 
-    @Cache
-    def __summarise_data(self, price_data: pd.DataFrame) -> pd.DataFrame:
+    @django_cache(cache_name='price_data')
+    def summarise_data(self, price_data: pd.DataFrame) -> pd.DataFrame:
         """
         Produces a data summary dashboard from provided data showing:
             * The datetime of the first and last candles for each datasource;
@@ -399,8 +566,8 @@ class QualityView(View):
         aggs = {'minutes': 'T', 'hours': 'H', 'days': 'D', 'weeks': 'W', 'months': 'M'}
 
         for key in aggs:
-            # Get counts for aggregation period, then group by symbol, instrument type and datasource to get min, max
-            # and avg counts for aggregation period
+            # Get counts for aggregation period, then group by symbol, instrument type and datasource to get min,
+            # max and avg counts for aggregation period
             agg_period_ungrouped = price_data.groupby(
                 ['symbol', 'instrument_type', 'datasource', pd.Grouper(key='time', freq=aggs[key])]).agg(
                 count=('time', 'count'))
@@ -433,42 +600,16 @@ class QualityView(View):
 
         return grouped
 
-    def __format_data(self, summarised_data: pd.DataFrame) -> str:
+    @staticmethod
+    def get_most_used_period() -> str:
         """
-        Returns the HTML for the provided summary data. Formats as required for display.
-
-        :param summarised_data: A dataframe containing the summary data
-
-        :return: html as string
+        Returns the most used candle period. This will be the period that is common across the largest
+        number of datasources. This will be used as the initial value for the forms
+        :return: period
         """
+        datasources = [ds.name for ds in models.DataSource.objects.all()]
+        periods = [dscp.period for dscp in
+                   models.DataSourceCandlePeriod.objects.filter(datasource__name__in=datasources)]
+        most_used_period = None if len(periods) == 0 else Counter(periods).most_common(1)[0][0]
 
-        display = summarised_data
-
-        # Merge the agg functions for _all into cells for each aggregation period
-        for agg in ['minutes', 'hours', 'days', 'weeks', 'months']:
-            # Get the min, max and avg columns and consolidate into a new column. Drop the existing ones.
-            min_col = f'{agg}_min_all'
-            max_col = f'{agg}_max_all'
-            avg_col = f'{agg}_avg_all'
-            display[agg] = 'min:' + display[min_col].astype(str) + ' max:' + display[max_col].astype(
-                str) + ' avg:' + display[avg_col].astype(str)
-
-        # Rename the columns that we will be keeping
-        display = display.rename(
-            columns={'symbol': 'Symbol', 'instrument_type': 'Instrument Type', 'first_all': 'First Price',
-                     'last_all': 'Last Price', 'minutes': 'Minutes', 'hours': 'Hours', 'days': 'Days',
-                     'weeks': 'Weeks',
-                     'months': 'Months'})
-
-        # Reorder the columns, excluding any that we dont want to keep
-        display = display[
-            ['Symbol', 'Instrument Type', 'First Price', 'Last Price', 'Minutes', 'Hours', 'Days', 'Weeks',
-             'Months']]
-
-        # Convert to HTML. Then set style for thead. We wont set the table style through the to_html method as this will
-        # keep the default dataframe style.
-        html = display.to_html(index=False)
-        html = html.replace("<thead>", '<thead class="table-dark">')
-        html = html.replace('class="dataframe"', 'class="table table-striped"')
-
-        return html
+        return most_used_period

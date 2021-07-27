@@ -25,6 +25,13 @@ class DataSourceInstanceNotImplementedError(Exception):
     pass
 
 
+class DataNotAvailableException(Exception):
+    """
+    An exception that can be raised if data is not available for the specified symbol / timeframe
+    """
+    pass
+
+
 class DataSourceImplementation:
     """
     The interface for applications datasources

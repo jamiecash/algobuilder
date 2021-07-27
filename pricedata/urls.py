@@ -2,8 +2,7 @@ from django.urls import path, register_converter
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 from . import views
-from . import converters
-from .views import IndexView, QualityView, TestView
+from . import converters, views
 
 register_converter(converters.DatetimeConverter, 'datetime')
 register_converter(converters.ListOfStringsConverter, 'listofstr')
@@ -11,13 +10,15 @@ register_converter(converters.ListOfStringsConverter, 'listofstr')
 app_name = 'pricedata'
 
 urlpatterns = [
-    path('', IndexView.as_view(), name="index"),
+    path('', views.IndexView.as_view(), name="index"),
 
-    # Data quality dashboard
-    path('quality/', QualityView.as_view(), name='quality'),
+    # Data metrics, quality dashboard and candles
+    path('metrics/', views.MetricsView.as_view(), name='metrics'),
+    path('quality/', views.QualityView.as_view(), name='quality'),
+    path('candles/', views.CandlesView.as_view(), name='candles'),
 
     # A test page for development. TODO Remove this, test.html and TestView
-    path('test/', TestView.as_view(), name="test"),
+    path('test/', views.TestView.as_view(), name="test"),
 ]
 
 urlpatterns += staticfiles_urlpatterns()

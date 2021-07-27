@@ -1,80 +1,74 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Page split into 2 columns, the sidebar containing the form and the main content. -->
 <div class="container-fluid">
     <div class="row">
-        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
-            <div class="sidebar-sticky">
-                <form method="post">
-                    {% csrf_token %}
-                    <ul class="list-group">
-                      <li class="list-group-item">
-                          <h1 class="h2">Filters</h1>
-                          {% if form.errors %}
-                            <div class="invalid-feedback">{{ form.errors }}</div>
-                          {% endif %}
-                      </li>
-                      <li class="list-group-item">
-                        <div class="form-group">
-                            <div class="form-label">{{ form.from_date.label }}</div>
-                            <div class="flex-fill">{{ form.from_date }}</div>
-                        </div>
-                      </li>
-                      <li class="list-group-item">
-                        <div class="form-group">
-                            <div class="form-label">{{ form.to_date.label }}</div>
-                            <div class="flex-fill">{{ form.to_date }}</div>
-                        </div>
-                      </li>
-                      <li class="list-group-item">
-                        <div class="form-group">
-                            <div class="form-label">{{ form.data_sources.label }}</div>
-                            <div class="flex-fill">{{ form.data_sources }}</div>
-                        </div>
-                      </li>
-                      <li class="list-group-item">
-                        <div class="form-group">
-                            <div class="form-label">{{ form.candle_period.label }}</div>
-                            <div class="flex-fill">{{ form.candle_period }}</div>
-                        </div>
-                      </li>
-                      <li class="list-group-item">
-                        <div class="form-group">
-                            <div class="form-label">{{ form.aggregation_period.label }}</div>
-                            <div class="flex-fill">{{ form.aggregation_period }}</div>
-                        </div>
-                      </li>
-                      <li class="list-group-item">
-                        <input class="btn btn-primary" type="submit" value="Submit">
-                      </li>
-                    </ul>
-                </form>
-            </div>
-        </nav>
-
-        <main role="main" class="col-md-9 ml-sm-auto col-lg-10 pt-3 px-4">
-            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
-                <h1 class="h2 row">Data Quality Dashboard</h1>
-            </div>
-            <div>
+        <!-- First column containing form -->
+        <div class="col-md-2 bg-light sidebar-sticky">
+            <form method="post">
+                {% csrf_token %}
+                <ul class="list-group">
+                  <li class="list-group-item">
+                      <h1 class="h2">Filters</h1>
+                      {% if form.errors %}
+                        <div class="invalid-feedback">{{ form.errors }}</div>
+                      {% endif %}
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.from_date.label }}</div>
+                        <div class="flex-fill">{{ form.from_date }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.to_date.label }}</div>
+                        <div class="flex-fill">{{ form.to_date }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.data_sources.label }}</div>
+                        <div class="flex-fill">{{ form.data_sources }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.candle_period.label }}</div>
+                        <div class="flex-fill">{{ form.candle_period }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <div class="form-group">
+                        <div class="form-label">{{ form.aggregation_period.label }}</div>
+                        <div class="flex-fill">{{ form.aggregation_period }}</div>
+                    </div>
+                  </li>
+                  <li class="list-group-item">
+                    <input class="btn btn-primary" type="submit" value="Submit">
+                  </li>
+                </ul>
+            </form>
+        </div>
+        <!-- Second column containing main content. This will contain charts -->
+        <main class="col-md-10">
+            <!-- The chart header and charts -->
+            <h2 class="h2 row">Data Quality Dashboard</h2>
+            <!-- For the charts, we need to create the divs with the chart name first, then create the charts -->
+            <div class="row">
+                {% if charts %}
+                    {% for ds, chart in charts.items %}
+                        <div id=chart_{{ ds }}></div>
+                    {% endfor %}
+                {% endif %}
                 {% if charts %}
                     {% for ds, chart in charts.items %}
                         <script>
                             html = {{ chart|safe }}
                             Bokeh.embed.embed_item(html, "chart_".concat('{{ ds }}'));
                         </script>
-                        <div class="row" id=chart_{{ ds }}></div>
                     {% endfor %}
-                {% else %}
-                    <p>No data available.</p>
-                {% endif %}
-            </div>
-            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pb-2 mb-3 border-bottom">
-                <h1 class="h2 row">Data Quality Summary</h1>
-            </div>
-            <div>
-                {% if summary_data %}
-                    {{ summary_data|safe }}
                 {% else %}
                     <p>No data available.</p>
                 {% endif %}
