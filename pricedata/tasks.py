@@ -1,10 +1,11 @@
 import logging
 
+import pandas as pd
 from background_task import background
 from datetime import timedelta
 from django.db.models import Max
 from django.utils import timezone
-from django.db import connection, transaction
+from django.db import connection
 
 from pricedata import datasource
 from pricedata.models import Candle
@@ -80,23 +81,20 @@ class DataRetriever:
                 to_date = timezone.now()
 
                 # Get the data
-                data = ds_instance.get_prices(symbol, from_date, to_date, ds_pc.period)
-                log.debug(f"{len(data.index)} {ds_pc.period} candles retrieved from {ds_pc.datasource.name} for "
-                          f"{symbol} to {to_date}.")
+                try:
+                    data = ds_instance.get_prices(symbol, from_date, to_date, ds_pc.period)
+                    log.debug(f"{len(data.index)} {ds_pc.period} candles retrieved from {ds_pc.datasource.name} for "
+                              f"{symbol} to {to_date}.")
 
-                # Prepare the dataframe for bulk upsert by adding the datasource symbol.
-                data['datasource_symbol_id'] = datasource_symbol.id
+                    # Prepare the dataframe for bulk upsert by adding the datasource symbol.
+                    data['datasource_symbol_id'] = datasource_symbol.id
 
-                # Update or insert. Define the fields used for insert, the fields used for update and get the data as a
-                # list of tuples
-                create_fields = ['time', 'period', 'bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open',
-                                 'ask_high', 'ask_low', 'ask_close', 'volume', 'datasource_symbol_id']
-                update_fields = ['bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open', 'ask_high', 'ask_low',
-                                 'ask_close', 'volume']
-                unique_fields = ['datasource_symbol_id', 'time', 'period']
-                values = [tuple(x) for x in data.to_numpy()]
-                DataRetriever.__bulk_insert_or_update(create_fields=create_fields, update_fields=update_fields,
-                                                      unique_fields=unique_fields, values=values)
+                    # Update or insert. We need he data, the table name and the list of unique fields.
+                    unique_fields = ['datasource_symbol_id', 'time', 'period']
+                    table = Candle.objects.model._meta.db_table
+                    DataRetriever.__bulk_insert_or_update(data=data, table=table, unique_fields=unique_fields)
+                except datasource.DataNotAvailableException as ex:
+                    DataRetriever.__log.warning(ex)
         else:
             # Inactive
             log.debug(f"Task running for DataSourceCandlePeriod {ds_pc}.")
@@ -147,19 +145,25 @@ class DataRetriever:
         models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)
 
     @staticmethod
-    def __bulk_insert_or_update(create_fields, update_fields, unique_fields, values):
+    def __bulk_insert_or_update(data: pd.DataFrame, table: str, unique_fields):
         """
         Bulk insert or update (upsert) of price data. If pk already exists, then update else insert
 
-        :param create_fields: Fields for insert
-        :param update_fields: Fields to update on update
+        :param data: The pandas dataframe to insert / update to db. The columns in the dataframe must match the table
+            columns.
+        :param table: The name of the table to update
         :param unique_fields: Fields that will raise the unique key constraint on insert
-        :param values: list of tuples containing values
         :return:
         """
 
+        # Get create fields from dataframe and the update fields as the create fields - unique fields
+        create_fields = data.columns
+        update_fields = set(create_fields) - set(unique_fields)
+
+        # Get teh values from the data
+        values = [tuple(x) for x in data.to_numpy()]
+
         cursor = connection.cursor()
-        db_table = Candle.objects.model._meta.db_table
 
         # Mogrify values to bind into sql.
         mogvals = [cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", val).decode('utf8') for val in values]
@@ -170,14 +174,8 @@ class DataRetriever:
             on_duplicates.append(field + "=excluded." + field)
 
         # SQL
-        sql = f"INSERT INTO {db_table} ({','.join(list(create_fields))}) VALUES {','.join(mogvals)} " \
+        sql = f"INSERT INTO {table} ({','.join(list(create_fields))}) VALUES {','.join(mogvals)} " \
               f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
 
         cursor.execute(sql)
         cursor.close()
-
-
-
-
-
-

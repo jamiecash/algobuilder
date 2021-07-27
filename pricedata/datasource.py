@@ -27,9 +27,36 @@ class DataSourceInstanceNotImplementedError(Exception):
 
 class DataNotAvailableException(Exception):
     """
-    An exception that can be raised if data is not available for the specified symbol / timeframe
+    An exception that can be raised if data is not available for the specified symbol / period / timeframe
     """
-    pass
+
+    datasource = None
+    symbol = None
+    period = None
+    from_date = None
+    to_date = None
+    error_code = None
+    error_message = None
+
+    def __init__(self, datasource, symbol, period, from_date, to_date, error_code=None, error_message=None):
+        self.datasource = datasource
+        self.symbol = symbol
+        self.period = period
+        self.from_date = from_date
+        self.to_date = to_date
+        self.error_code = error_code
+        self.error_message = error_message
+
+        msg = f"Data not available from {datasource} for {symbol} between {from_date} and {to_date} for {period} " \
+              f"period."
+
+        if error_code is not None:
+            msg += f" Error code: {error_code}"
+
+        if error_message is not None:
+            msg += f" Error message: {error_message}"
+
+        super().__init__(msg)
 
 
 class DataSourceImplementation:
@@ -80,7 +107,7 @@ class DataSourceImplementation:
     @staticmethod
     def all_instances():
         """
-        Retruns a list of all DataSources
+        Returns a list of all DataSources
         :return:
         """
         all_datasource_models = models.DataSource.objects.all()
@@ -114,5 +141,3 @@ class DataSourceImplementation:
             'ask_open', 'ask_high', 'ask_low', 'ask_close', 'volume']
         """
         raise NotImplementedError
-
-

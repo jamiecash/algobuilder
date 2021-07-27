@@ -20,7 +20,6 @@ instrument_types = [
         ('CRYPTO', 'Crypto Currency')
     ]
 
-
 class DataSource(models.Model):
     """
     A datasource to retrieve data from
@@ -150,8 +149,15 @@ class DataSourceCandlePeriod(models.Model):
 
         # If not already scheduled then schedule background task to retrieve the data.
         if len(scheduled_tasks) == 0:
-            tasks.DataRetriever.retrieve_prices(datasource_candleperiod_id=self.id, verbose_name=task_name, repeat=60,
-                                                repeat_until=None)
+            # Task repeat will be set depending on the candle period, so that we do not check for new candles more
+            # often than necessary. For periods < 10S, we will check every 10S. For others, we will align the
+            # repeat with the period.
+            candle_period_repeats = {'1S': 10, '5S': 10, '10S': 10, '15S': 15, '30S': 30, '1M': 60, '5M': 60 * 5,
+                                     '10M': 60 * 10, '15M': 60 * 15, '30M': 60 * 30, '1H': 60 * 60, '3H': 60 * 60 * 3,
+                                     '6H': 60 * 60 * 6, '12H': 60 * 60 * 12, '1D': 60 * 60 * 24, '1W': 60 * 60 * 24 * 7,
+                                     '1MO': 60 * 60 * 24 * 7 * 4}
+            tasks.DataRetriever.retrieve_prices(datasource_candleperiod_id=self.id, verbose_name=task_name,
+                                                repeat=candle_period_repeats[self.period], repeat_until=None)
 
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
