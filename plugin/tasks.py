@@ -4,35 +4,28 @@ import logging
 import subprocess
 import sys
 
-from background_task import background
+from celery import shared_task
 
 
-class PluginPreparer:
-    """
-    A class to prepare a plugin. Runs as a task so that web form isn't tied up on save.
-    """
+@shared_task
+def install_plugin(plugin_id: int):
+    from plugin import models  # Imported when needed, due to circular dependency
 
     # Logger
-    __log = logging.getLogger(__name__)
+    log = logging.getLogger(__name__)
 
-    @staticmethod
-    @background(schedule=0, queue='plugin_prep')
-    def prepare(plugin_id: int):
-        from plugin import models  # Imported when needed, due to circular dependency
+    # Get the plugin model id
+    plugin = models.Plugin.objects.get(id=plugin_id)
 
-        # Get the plugin model id
-        plugin = models.Plugin.objects.get(id=plugin_id)
-
-        # Configure the plugin
-
+    # Install the plugin if it is not already installed
+    if not plugin.installed:
         # Install libraries in requirements file. This must be done prior to instance being created due to dependencies
         if plugin.requirements_file.name != '':
             try:
                 subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r',
                                        f'{plugin.requirements_file.name}'])
             except subprocess.CalledProcessError as ex:
-                PluginPreparer.__log.warning(f"Requirements for Plugin {plugin.module_name} could not be installed.",
-                                             ex)
+                log.warning(f"Requirements for Plugin {plugin.module_name} could not be installed.",  ex)
 
         # Import the module
         module = importlib.import_module(plugin.module_name)
@@ -50,4 +43,7 @@ class PluginPreparer:
             # Create it
             models.PluginClass(plugin=plugin, name=c.__name__, plugin_type=plugin_type).save()
 
+        # Set to installed and save
+        plugin.installed = True
+        plugin.save()
 

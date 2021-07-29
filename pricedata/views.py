@@ -12,6 +12,7 @@ from bokeh.plotting import figure
 from bokeh.transform import transform
 
 import pandas as pd
+from django.contrib import messages
 from django.db import connection
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -20,6 +21,8 @@ from django.views import View
 
 from algobuilder.utils import django_cache
 from pricedata import models, forms
+from pricedata.forms import TestForm
+from .tasks import test_task
 
 
 class IndexView(View):
@@ -34,17 +37,31 @@ class IndexView(View):
 
 
 class TestView(View):
-    form_class = None
+    form_class = TestForm
     template_name = "pricedata/test.html"
 
     # Logger
     __log = logging.getLogger(__name__)
 
-    def get(self, request):
+    def form_valid(self, form):
+        x = form.cleaned_data.get('x')
+        y = form.cleaned_data.get('x')
+        test_task.delay(x, y)
+        messages.success(self.request, 'We are doing the maths. Wait a moment and refresh this page.')
         return render(self.request, self.template_name, {'test_text': 'Test View'})
 
+    def get(self, request):
+        return render(self.request, self.template_name, {'form': self.form_class()})
+
     def post(self, request):
-        return HttpResponse("POST not supported", status=404)
+        form = self.form_class(request.POST)
+        if form.is_valid():
+            x = form.cleaned_data.get('x')
+            y = form.cleaned_data.get('y')
+            test_task.delay(x, y)
+            messages.success(self.request, 'We are doing the maths. Wait a moment and refresh this page.')
+            return render(self.request, self.template_name, {'form': self.form_class(),
+                                                             'messages': messages})
 
 
 class MetricsView(View):
@@ -458,8 +475,8 @@ class CandlesView(View):
                                     f"{source.data}")
 
             # Date formatter. Used on axis
-            dtfmt = DatetimeTickFormatter(days='%Y-%m-%d', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M', minutes='%Y-%m-%d %H:%M:%S',
-                                          seconds='%Y-%m-%d %H:%M:%S')
+            dtfmt = DatetimeTickFormatter(days='%Y-%m-%d', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
+                                          minutes='%Y-%m-%d %H:%M:%S', seconds='%Y-%m-%d %H:%M:%S')
 
             # Display date and OHLCV values for hover
             hover = HoverTool(

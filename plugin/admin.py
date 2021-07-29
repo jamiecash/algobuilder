@@ -22,8 +22,8 @@ def requirements_file_name(obj):
 @admin.register(Plugin)
 class PluginAdmin(admin.ModelAdmin):
     fields = ("module_filename", "requirements_file")
-    list_display = ("module_name", requirements_file_name, num_classes)
-    readonly_fields = ("module_name", requirements_file_name)
+    list_display = ("module_name", requirements_file_name, "installed", num_classes)
+    readonly_fields = ("module_name", requirements_file_name, "installed")
 
 
 

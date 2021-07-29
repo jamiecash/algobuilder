@@ -1,9 +1,9 @@
 import importlib
-import inspect
 import logging
 
-from background_task.models import Task
 from django.db import models
+
+from plugin.tasks import install_plugin
 
 
 class Plugin(models.Model):
@@ -17,6 +17,9 @@ class Plugin(models.Model):
     # The path to the plugin module and requirements file
     module_filename = models.FileField(max_length=200, upload_to=r'plugin\plugins')
     requirements_file = models.FileField(max_length=200, upload_to=r'plugin\requirements')
+
+    # Whether the module us installed
+    installed = models.BooleanField(default=False)
 
     # Module. Create only once on module property method
     __module = None
@@ -53,16 +56,7 @@ class Plugin(models.Model):
         :return:
         """
         super().save(*args, **kwargs)
-
-        import plugin.tasks as tasks  # Import here due to circular dependency.
-
-        # Check if task is already scheduled
-        task_name = f"Plugin preparer for plugin id {self.id}."
-        scheduled_tasks = Task.objects.filter(verbose_name=task_name)
-
-        # If not already scheduled then schedule background task to configure plugin.
-        if len(scheduled_tasks) == 0:
-            tasks.PluginPreparer.prepare(plugin_id=self.id, verbose_name=task_name)
+        install_plugin.delay(plugin_id=self.id)
 
     def __repr__(self):
         return f"Plugin(module_name={self.module_name}, requirements_file={self.requirements_file})"

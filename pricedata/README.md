@@ -41,9 +41,13 @@ python manage.py runserver
    * Provide any parameters required by your datasource class as a string representation of a dict. (e.g., the MetaTrader example above requires a market_watch_only parameter which can be input as {'market_watch_only': False}).
    * Add the candle periods that you would like to retrieve for your datasource. AlgoBuilder can be configured to retrieve price candle data for multiple periods at the same time. The 'start from' setting will be the first candle retrieved for the period when the candle data is retrieved from the datasource for the first time. Set the 'active' flag to enable retrieval of price data for period.
    * Click save.
-   * Rerun the task processor if it is not already running.
+   * Run the task repeater to push repeating requests to retrieve price data.
    ```shell
-   python manage.py process_tasks
+   celery -A algobuilder beat -l INFO
+   ```
+   * Run the task processor that you run to install your datasource plugin if it is not already running.
+   ```shell
+   celery -A algobuilder worker -l INFO --pool=solo
    ```
    
    
@@ -51,7 +55,7 @@ A screenshot for our above example has been provided below.
      
 ![Add datasource screenshot](README/images/screenshot_add_datasource.png)
     
-Your datasource will now be configured. All symbols from your datasource will be available in this application. AlgoBuilder will start retrieving price data for all symbols.
+Your datasource will now be configured. All symbols from your datasource will be available in AlgoBuilder and AlgoBuilder will start retrieving price data for all symbols.
 
 ## Selecting symbols to retrieve
 Once your datasources have been configured, all symbols for all datasources will be available in your application. A symbol exists only once across all data sources, i.e., multiple datasources can share the same symbol. You can edit your symbols to change their instrument type and set whether price data will be retrieved from a data source for that symbol.

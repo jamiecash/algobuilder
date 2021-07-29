@@ -1,9 +1,10 @@
 import ast
+import json
 import logging
 
+from django.utils import timezone
+from django_celery_beat.models import PeriodicTask, IntervalSchedule
 from django.db import models
-
-from background_task.models import Task
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
@@ -19,6 +20,7 @@ instrument_types = [
         ('FOREX', 'Foreign Exchange'), ('CFD', 'Contract for Difference'), ('STOCK', 'Company Stock'),
         ('CRYPTO', 'Crypto Currency')
     ]
+
 
 class DataSource(models.Model):
     """
@@ -38,6 +40,9 @@ class DataSource(models.Model):
     # The datasource connection parameters
     connection_params = models.CharField(max_length=500)
 
+    # Active.
+    active = models.BooleanField(default=True)
+
     def get_connection_param(self, param_name: str):
         """
         Returns the value of the specified connection param
@@ -55,23 +60,23 @@ class DataSource(models.Model):
 
     def save(self, *args, **kwargs):
         """
-        Override save to import requirements listed in requirements_file and test the connection.
+        Override save to update symbols from datasource every day
         :param args:
         :param kwargs:
         :return:
         """
         super().save(*args, **kwargs)
 
-        import pricedata.tasks as tasks  # Import here due to circular dependency.
+        # Schedule to run every day. We will use get or create to ensure we don't duplicate schedules
+        # or tasks.
+        schedule, created = IntervalSchedule.objects.get_or_create(every=1, period=IntervalSchedule.DAYS)
 
-        # Check if task is already scheduled
-        task_name = f"retrieve_symbols for DataSource id {self.id}."
-        scheduled_tasks = Task.objects.filter(verbose_name=task_name)
-
-        # If not already scheduled then schedule background task to configure data source. Repeat daily.
-        if len(scheduled_tasks) == 0:
-            tasks.DataRetriever.retrieve_symbols(datasource_id=self.id, verbose_name=task_name, repeat=60*60*24,
-                                                 repeat_until=None)
+        # Don't reschedule of we already have this task set up
+        task_name = f'Updating symbols for {self.name}'
+        tasks = PeriodicTask.objects.filter(name=task_name)
+        if len(tasks) == 0:
+            PeriodicTask.objects.create(interval=schedule, name=task_name, task='pricedata.tasks.retrieve_symbols',
+                                        start_time=timezone.now(), kwargs=json.dumps({'datasource_id': self.id}))
 
     def __repr__(self):
         return f"DataSource(name={self.name}, pluginclass={self.pluginclass}, " \
@@ -141,23 +146,30 @@ class DataSourceCandlePeriod(models.Model):
         """
         super().save(*args, **kwargs)
 
-        import pricedata.tasks as tasks  # Import here due to circular dependency.
+        # Task repeat will be set depending on the candle period, so that we do not check for new candles more
+        # often than necessary. For periods < 10S, we will check every 10S. For others, we will align the
+        # repeat with the period.
+        candle_period_repeats = {'1S': (10, IntervalSchedule.SECONDS), '5S': (10, IntervalSchedule.SECONDS),
+                                 '10S': (10, IntervalSchedule.SECONDS), '15S': (15, IntervalSchedule.SECONDS),
+                                 '30S': (30, IntervalSchedule.SECONDS), '1M': (1, IntervalSchedule.MINUTES),
+                                 '5M': (5, IntervalSchedule.MINUTES), '10M': (10, IntervalSchedule.MINUTES),
+                                 '15M': (15, IntervalSchedule.MINUTES), '30M': (30, IntervalSchedule.MINUTES),
+                                 '1H': (1, IntervalSchedule.HOURS), '3H': (3, IntervalSchedule.HOURS),
+                                 '6H': (6, IntervalSchedule.HOURS), '12H': (12, IntervalSchedule.HOURS),
+                                 '1D': (1, IntervalSchedule.DAYS), '1W': (7, IntervalSchedule.DAYS),
+                                 '1MO': (30, IntervalSchedule.DAYS)}
 
-        # Check if task is already scheduled
-        task_name = f"retrieve_prices for DataSourceCandlePeriod id {self.id}."
-        scheduled_tasks = Task.objects.filter(verbose_name=task_name)
+        # Get or create schedule.
+        repeat = candle_period_repeats[self.period]
+        schedule, created = IntervalSchedule.objects.get_or_create(every=repeat[0], period=repeat[1])
 
-        # If not already scheduled then schedule background task to retrieve the data.
-        if len(scheduled_tasks) == 0:
-            # Task repeat will be set depending on the candle period, so that we do not check for new candles more
-            # often than necessary. For periods < 10S, we will check every 10S. For others, we will align the
-            # repeat with the period.
-            candle_period_repeats = {'1S': 10, '5S': 10, '10S': 10, '15S': 15, '30S': 30, '1M': 60, '5M': 60 * 5,
-                                     '10M': 60 * 10, '15M': 60 * 15, '30M': 60 * 30, '1H': 60 * 60, '3H': 60 * 60 * 3,
-                                     '6H': 60 * 60 * 6, '12H': 60 * 60 * 12, '1D': 60 * 60 * 24, '1W': 60 * 60 * 24 * 7,
-                                     '1MO': 60 * 60 * 24 * 7 * 4}
-            tasks.DataRetriever.retrieve_prices(datasource_candleperiod_id=self.id, verbose_name=task_name,
-                                                repeat=candle_period_repeats[self.period], repeat_until=None)
+        # Don't reschedule of we already have this task set up
+        task_name = f"Retrieving prices for DataSourceCandlePeriod id {self.id}."
+        tasks = PeriodicTask.objects.filter(name=task_name)
+        if len(tasks) == 0:
+            PeriodicTask.objects.create(interval=schedule, name=task_name, task='pricedata.tasks.retrieve_prices',
+                                        start_time=timezone.now(),
+                                        kwargs=json.dumps({'datasource_candleperiod_id': self.id}))
 
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
@@ -216,6 +228,6 @@ class Candle(models.Model):
 # Receiver to delete task when DataSourceCandlePeriod is deleted
 @receiver(post_delete, sender=DataSourceCandlePeriod)
 def delete_datasourcecandleperiod_receiver(sender, instance, using, **kwargs):
-    task_name = f"retrieve_prices for DataSourceCandlePeriod id {instance.id}."
-    task = Task.objects.get(verbose_name=task_name)
+    task_name = f"Retrieving prices for DataSourceCandlePeriod id {instance.id}."
+    task = PeriodicTask.objects.filter(name=task_name)[0]
     task.delete()

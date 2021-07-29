@@ -78,3 +78,9 @@ class PriceDataCandleForm(forms.Form):
         forms.ChoiceField(widget=forms.Select(attrs={'class': 'form-control'}), required=True,
                           choices=[(symbol, symbol) for symbol in symbols],
                           label="Symbol")
+
+
+class TestForm(forms.Form):
+    #  TODO Delete test form
+    x = forms.IntegerField()
+    y = forms.IntegerField()

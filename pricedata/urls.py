@@ -1,7 +1,6 @@
 from django.urls import path, register_converter
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
-from . import views
 from . import converters, views
 
 register_converter(converters.DatetimeConverter, 'datetime')

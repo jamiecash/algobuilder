@@ -5,13 +5,14 @@ from typing import List, Dict, Tuple
 
 import MetaTrader5
 
-from pricedata.datasource import DataSourceImplementation
+from pricedata.datasource import DataSourceImplementation, DataNotAvailableException
 
 
 class MT5DataSource(DataSourceImplementation):
     """
     MetaTrader 5 DataSource
     """
+
     def __init__(self, data_source_model):
         # Super
         DataSourceImplementation.__init__(self, data_source_model=data_source_model)
@@ -118,7 +119,6 @@ class MT5DataSource(DataSourceImplementation):
         else:
             # Get ticks from MT5
             ticks = self.__get_ticks(symbol, from_date, to_date, period)
-
             self.__log.debug(f"{len(ticks)} ticks retrieved for {symbol}.")
 
             try:
@@ -204,10 +204,16 @@ class MT5DataSource(DataSourceImplementation):
             prices = MetaTrader5.copy_rates_range(symbol, timeframe, batch[0], batch[1])
             if prices is None:
                 error = MetaTrader5.last_error()
-                self.__log.warning(f"Error retrieving prices for {symbol}: {error}")
+                raise DataNotAvailableException(datasource=self._data_source_model.name, symbol=symbol, period=period,
+                                                from_date=from_date, to_date=to_date, error_code=error[0],
+                                                error_message=error[1])
             else:
                 # Create or append to dataframe
                 data = pd.DataFrame(prices) if data is None else data.append(pd.DataFrame(prices))
+
+        # Remove any duplicates. Datasource can return refreshed candle if end time of previous batch and start time of
+        # current batch is within the same candle period.
+        data = data.drop_duplicates(subset=['time'], keep='last')
 
         return data
 
@@ -230,13 +236,11 @@ class MT5DataSource(DataSourceImplementation):
             ticks = MetaTrader5.copy_ticks_range(symbol, batch[0], batch[1], MetaTrader5.COPY_TICKS_ALL)
             if ticks is None:
                 error = MetaTrader5.last_error()
-                self.__log.warning(f"Error retrieving ticks for {symbol}: {error}")
+                raise DataNotAvailableException(datasource=self._data_source_model.name, symbol=symbol, period=period,
+                                                from_date=from_date, to_date=to_date, error_code=error[0],
+                                                error_message=error[1])
             else:
                 # Create or append to dataframe
                 data = pd.DataFrame(ticks) if data is None else data.append(pd.DataFrame(ticks))
 
         return data
-
-
-
-

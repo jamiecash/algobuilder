@@ -25,9 +25,10 @@ python manage.py runserver
    * Select the python module containing your datasource implementation class that you created in 'Build your datasource'.
    * Select requirements file that you created in 'Build your datasource'.
    * Click save.
+   * Make sure your messaging server is running.  
    * Run the task processor to prepare your module.
    ```shell
-   python manage.py process_tasks
+   celery -A algobuilder worker -l INFO --pool=solo
    ```
    
 Your plugin should now be installed and ready for use. The admin list page should show the number of classes available in your module. Note that this will only be populated once the task processor has been run.

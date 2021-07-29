@@ -2,11 +2,12 @@ from decimal import Decimal
 
 import pandas as pd
 
-from background_task import models as task_model
 from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
 from unittest.mock import patch, MagicMock
+
+from django_celery_beat.models import PeriodicTask
 
 from plugin import models as plugin_models
 from pricedata import models
@@ -45,8 +46,7 @@ class DataSourceTests(TestCase):
 
     def test_save(self):
         """
-        When a datasource is saved, it should call DataSourceImplementation.configure passing itself. We will test
-        using a mock DataSourceImplementation.
+        When a datasource is saved, it should schedule a task to retrieve symbols
         :return:
         """
 
@@ -55,11 +55,12 @@ class DataSourceTests(TestCase):
         ds.save()
 
         # Test that a task was created to configure this datasource
-        task_name = f"retrieve_symbols for DataSource id {ds.id}."
+        task_name = f'Updating symbols for {ds.name}'
 
         # Check that task exists
-        task = task_model.Task.objects.get(verbose_name=task_name)
-        self.assertIsNotNone(task)
+        task_list = PeriodicTask.objects.filter(name=task_name)
+        self.assertIsNotNone(task_list)
+        self.assertGreater(len(task_list), 0)
 
 
 class DataSourceCandlePeriodTests(TestCase):
@@ -85,18 +86,20 @@ class DataSourceCandlePeriodTests(TestCase):
         dscp.save()
 
         # Task name to check
-        task_name = f"retrieve_prices for DataSourceCandlePeriod id {dscp.id}."
+        task_name = f"Retrieving prices for DataSourceCandlePeriod id {dscp.id}."
 
         # Check that task exists
-        task = task_model.Task.objects.get(verbose_name=task_name)
-        self.assertIsNotNone(task)
+        task_list = PeriodicTask.objects.filter(name=task_name)
+        self.assertIsNotNone(task_list)
+        self.assertGreater(len(task_list), 0)
 
         # Delete the task
         dscp.delete()
 
         # Check that task no longer exists
-        num_tasks = len(task_model.Task.objects.filter(verbose_name=task_name))
-        self.assertTrue(num_tasks == 0)
+        task_list = PeriodicTask.objects.filter(name=task_name)
+        self.assertIsNotNone(task_list)
+        self.assertEqual(len(task_list), 0)
 
 
 # Tests for tasks
@@ -128,8 +131,8 @@ class DataRetrieverTests(TestCase):
         ds = models.DataSource(id=5, name='test', pluginclass=self.plugin_class)
         ds.save()
 
-        # Run retrieve_symbols_impl. We should have the mock symbols populated for all 5 symbols.
-        tasks.DataRetriever.retrieve_symbols_impl(datasource_id=ds.id)
+        # Run retrieve_symbols. We should have the mock symbols populated for all 5 symbols.
+        tasks.retrieve_symbols(datasource_id=ds.id)
         symbols = models.Symbol.objects.all()
         self.assertTrue(len(symbols) == 5)
 
@@ -163,9 +166,9 @@ class DataRetrieverTests(TestCase):
             ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol, retrieve_price_data=True)
             ds_symbol.save()
 
-        # Run retrieve_prices_impl. We should have the mock data populated for all symbols. 25 in total, 5 rows for
+        # Run retrieve_prices. We should have the mock data populated for all symbols. 25 in total, 5 rows for
         # 5 symbols
-        tasks.DataRetriever.retrieve_prices_impl(datasource_candleperiod_id=dscp.id)
+        tasks.retrieve_prices(datasource_candleperiod_id=dscp.id)
         candles = models.Candle.objects.all()
         self.assertEquals(len(candles), 25)
 
@@ -202,11 +205,11 @@ class DataRetrieverTests(TestCase):
         ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol, retrieve_price_data=True)
         ds_symbol.save()
 
-        # Run retrieve_prices_impl. We should have the mock data populated for symbols. 5 prices
-        tasks.DataRetriever.retrieve_prices_impl(datasource_candleperiod_id=dscp.id)
+        # Run retrieve_prices. We should have the mock data populated for symbols. 5 prices
+        tasks.retrieve_prices(datasource_candleperiod_id=dscp.id)
 
         # Run it again. These should be duplicate, so should be updated.
-        tasks.DataRetriever.retrieve_prices_impl(datasource_candleperiod_id=dscp.id)
+        tasks.retrieve_prices(datasource_candleperiod_id=dscp.id)
 
         # We should have 5 candles as the first 5 should have been updated
         candles = models.Candle.objects.all()
