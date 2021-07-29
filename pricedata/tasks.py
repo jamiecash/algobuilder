@@ -138,29 +138,37 @@ def bulk_insert_or_update(data: pd.DataFrame, table: str, unique_fields):
     :return:
     """
 
-    # Get create fields from dataframe and the update fields as the create fields - unique fields
-    create_fields = data.columns
-    update_fields = set(create_fields) - set(unique_fields)
+    # Logger
+    log = logging.getLogger(__name__)
 
-    # Get teh values from the data
-    values = [tuple(x) for x in data.to_numpy()]
+    # Do we have any data
+    if data is not None and len(data.index) > 0:
+        # Get create fields from dataframe and the update fields as the create fields - unique fields
+        create_fields = data.columns
+        update_fields = set(create_fields) - set(unique_fields)
 
-    cursor = connection.cursor()
+        # Get teh values from the data
+        values = [tuple(x) for x in data.to_numpy()]
 
-    # Mogrify values to bind into sql.
-    mogvals = [cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", val).decode('utf8') for val in values]
+        cursor = connection.cursor()
 
-    # Build list of x = excluded.x columns for SET part of sql
-    on_duplicates = []
-    for field in update_fields:
-        on_duplicates.append(field + "=excluded." + field)
+        # Mogrify values to bind into sql.
+        mogvals = [cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", val).decode('utf8') for val in values]
 
-    # SQL
-    sql = f"INSERT INTO {table} ({','.join(list(create_fields))}) VALUES {','.join(mogvals)} " \
-          f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
+        # Build list of x = excluded.x columns for SET part of sql
+        on_duplicates = []
+        for field in update_fields:
+            on_duplicates.append(field + "=excluded." + field)
 
-    cursor.execute(sql)
-    cursor.close()
+        # SQL
+        sql = f"INSERT INTO {table} ({','.join(list(create_fields))}) VALUES {','.join(mogvals)} " \
+              f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
+
+        log.debug(f"Saving {len(data.index)} prices.")
+        cursor.execute(sql)
+        cursor.close()
+    else:
+        log.debug(f"No prices to retrieved to save.")
 
 
 @shared_task
