@@ -5,9 +5,13 @@ TODO Create separate projects for collections of similar utils. Open source (MIT
 """
 import functools
 import logging
+import math
+import numpy as np
 import pandas as pd
+from typing import List
 
 from django.core.cache import caches, InvalidCacheBackendError
+from django.db import connection
 
 
 # TARGET PROJECT THEME: Caching
@@ -91,3 +95,111 @@ def django_cache(func=None, cache_name=None):
             return _Cache(function, cache_name=cache_name)
 
         return wrapper
+
+
+# TARGET PROJECT THEME: Database
+class DatabaseUtility:
+    @staticmethod
+    def bulk_insert_or_update(data: pd.DataFrame, table: str, unique_fields=None, batch_size=None):
+        """
+        Bulk insert or update (upsert) of price data. If unique fields already exists, then update else insert
+
+        :param data: The pandas dataframe to insert / update to db. The columns in the dataframe must match the table
+            columns.
+        :param table: The name of the table to update
+        :param unique_fields: Fields that will raise the unique key constraint on insert. If none are provided, then we
+            will just do a straight insert rather than upsert.
+        :param batch_size: Maximum number of rows to update in one go. If None, then no batching
+        :return:
+        """
+
+        # Logger
+        log = logging.getLogger(__name__)
+
+        # Do we have any data
+        if data is not None and len(data.index) > 0:
+            # Get batches if we are batching. If not create a single batch with all the data
+            batches = [data, ] if not batch_size else np.array_split(data, math.ceil(len(data.index) / batch_size))
+            log.debug(f'Bulk INSERT / UPDATE to {table}. Rowcount: {len(data.index)}.')
+            if batch_size is not None:
+                log.info(f'Update split into {len(batches)} batches of maximum {batch_size} updates.')  # TODO DEBUG
+
+            for i in range(0, len(batches)):
+                batch = batches[i]
+                log.info(f'Bulk INSERT / UPDATE to {table}. Batch {i + 1} of {len(batches)}.')
+
+                if unique_fields is None:
+                    # Insert
+                    DatabaseUtility.__bulk_insert_batch(batch, table)
+                else:
+                    # UPSERT
+                    DatabaseUtility.__bulk_upsert_batch(data, table, unique_fields)
+            else:
+                log.debug(f"No data to save.")
+
+    @staticmethod
+    def __bulk_insert_batch(data: pd.DataFrame, table: str):
+        """
+        Bulk insert for a single update from a batch. Called by bulk_insert_or_update
+        :param data:
+        :param table:
+        :return:
+        """
+        # Logger
+        log = logging.getLogger(__name__)
+
+        # Create the SQL
+        sqlvals = DatabaseUtility.__get_sql_insert_values_from_dataframe(data)
+        sql = f"INSERT INTO {table} ({','.join(list(data.columns))}) VALUES {','.join(sqlvals)}"
+
+        # Execute
+        log.info(f"INSERTING {len(data.index)} rows to {table}.")
+        connection.cursor().execute(sql)
+
+    @staticmethod
+    def __bulk_upsert_batch(data: pd.DataFrame, table: str, unique_fields: List[str]):
+        """
+        Bulk insert for a single update from a batch. Called by bulk_insert_or_update
+        :param data:
+        :param table:
+        :return:
+        """
+        # Logger
+        log = logging.getLogger(__name__)
+
+        # Get create fields from dataframe and the update fields as the create fields - unique fields
+        create_fields = data.columns
+        update_fields = set(create_fields) - set(unique_fields)
+
+        # Build build list of x = excluded.x columns for SET part of sql
+        on_duplicates = []
+        for field in update_fields:
+            on_duplicates.append(field + "=excluded." + field)
+
+        # Create the SQL
+        sqlvals = DatabaseUtility.__get_sql_insert_values_from_dataframe(data)
+        sql = f"INSERT INTO {table} ({','.join(list(data.columns))}) VALUES {','.join(sqlvals)} " \
+              f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
+
+        # Execute
+        log.info(f"UPSERTING {len(data.index)} rows to {table}.")
+        connection.cursor().execute(sql)
+
+    @staticmethod
+    def __get_sql_insert_values_from_dataframe(data):
+        """
+        Creates the values part of a SQL query for insert or update from a dataframes data
+        :param data:
+        :return:
+        """
+        # Get the values from the data
+        values = [tuple(x) for x in data.to_numpy()]
+
+        # Create cursor
+        cursor = connection.cursor()
+
+        # Mogrify values to bind into sql.
+        placeholders = ','.join(['%s' for _ in data.columns])
+        sqlvals = [cursor.mogrify(f"({placeholders})", val).decode('utf8') for val in values]
+
+        return sqlvals

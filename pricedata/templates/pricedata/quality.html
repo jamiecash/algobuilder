@@ -1,79 +1,78 @@
 {% extends "base.html" %}
 
-{% block content %}
-<!-- Page split into 2 columns, the sidebar containing the form and the main content. -->
-<div class="container-fluid">
-    <div class="row">
-        <!-- First column containing form -->
-        <div class="col-md-2 bg-light sidebar-sticky">
-            <form method="post">
-                {% csrf_token %}
-                <ul class="list-group">
-                  <li class="list-group-item">
-                      <h1 class="h2">Filters</h1>
-                      {% if form.errors %}
-                        <div class="invalid-feedback">{{ form.errors }}</div>
-                      {% endif %}
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.from_date.label }}</div>
-                        <div class="flex-fill">{{ form.from_date }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.to_date.label }}</div>
-                        <div class="flex-fill">{{ form.to_date }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.data_sources.label }}</div>
-                        <div class="flex-fill">{{ form.data_sources }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.candle_period.label }}</div>
-                        <div class="flex-fill">{{ form.candle_period }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.aggregation_period.label }}</div>
-                        <div class="flex-fill">{{ form.aggregation_period }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <input class="btn btn-primary" type="submit" value="Submit">
-                  </li>
-                </ul>
-            </form>
-        </div>
-        <!-- Second column containing main content. This will contain charts -->
-        <main class="col-md-10">
-            <!-- The chart header and charts -->
-            <h2 class="h2 row">Data Quality Dashboard</h2>
-            <!-- For the charts, we need to create the divs with the chart name first, then create the charts -->
-            <div class="row">
+{% block statusbar %}
+    {% include "pricedata/statusbar.html" %}
+{% endblock statusbar %}
+
+{% block sidebar %}
+    <form method="post">
+        {% csrf_token %}
+        <ul class="list-group">
+        <li class="list-group-item">
+              <h1 class="h2">Filters</h1>
+              {% if form.errors %}
+                <div class="invalid-feedback">{{ form.errors }}</div>
+              {% endif %}
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.from_date.label }}</div>
+                <div class="flex-fill">{{ form.from_date }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.to_date.label }}</div>
+                <div class="flex-fill">{{ form.to_date }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.datasources.label }}</div>
+                <div class="flex-fill">{{ form.datasources }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.candle_period.label }}</div>
+                <div class="flex-fill">{{ form.candle_period }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.aggregation_period.label }}</div>
+                <div class="flex-fill">{{ form.aggregation_period }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <input class="btn btn-primary" type="submit" value="Submit">
+          </li>
+        </ul>
+    </form>
+{% endblock sidebar %}
+
+{% block main %}
+    <div class="card">
+        <div class="card-body">
+            <h2 class="card-title">Data Quality Dashboard</h2>
+            <h3 class="card-subtitle mb-2 text-muted">Heatmap. Number of candles by aggregation period. Select range to drill down.</h3>
+            <div class="card-text">
                 {% if charts %}
-                    {% for ds, chart in charts.items %}
-                        <div id=chart_{{ ds }}></div>
+                    {% for chart in charts %}
+                        <div id=chart_{{ chart.0 }}></div>
                     {% endfor %}
                 {% endif %}
                 {% if charts %}
-                    {% for ds, chart in charts.items %}
+                    {% for chart in charts %}
                         <script>
-                            html = {{ chart|safe }}
-                            Bokeh.embed.embed_item(html, "chart_".concat('{{ ds }}'));
+                            html = {{ chart.1|safe }}
+                            Bokeh.embed.embed_item(html, "chart_".concat('{{ chart.0 }}'));
                         </script>
                     {% endfor %}
                 {% else %}
                     <p>No data available.</p>
                 {% endif %}
             </div>
-        </main>
+        </div>
     </div>
-</div>
-{% endblock content %}
+{% endblock main %}

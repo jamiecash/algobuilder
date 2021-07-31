@@ -21,6 +21,10 @@ instrument_types = [
         ('CRYPTO', 'Crypto Currency')
     ]
 
+aggregation_periods = [
+        ('minutes', 'Minutes'), ('hours', 'Hours'), ('days', 'Days'), ('weeks', 'Weeks'), ('months', 'Months')
+    ]
+
 
 class DataSource(models.Model):
     """
@@ -223,6 +227,126 @@ class Candle(models.Model):
 
     class Meta:
         unique_together = ('datasource_symbol', 'time', 'period',)
+
+
+class SummaryBatch(models.Model):
+    """
+    A batch run to create the price data quality metrics and aggregation data for the pricedata quality dashboards
+    """
+    STATUS_NOT_STARTED = 'NOT_STARTED'
+    STATUS_IN_PROGRESS = 'IN_PROGRESS'
+    STATUS_COMPLETE = 'COMPLETE'
+
+    # We need the time of the batch and the batch type
+    time = models.DateTimeField(unique=True)
+
+    # And a status
+    status = models.CharField(max_length=11, choices=[(STATUS_NOT_STARTED, STATUS_NOT_STARTED),
+                                                      (STATUS_IN_PROGRESS, STATUS_IN_PROGRESS),
+                                                      (STATUS_COMPLETE, STATUS_COMPLETE)],
+                              default=STATUS_NOT_STARTED)
+
+
+class SummaryMetric(models.Model):
+    """
+    A single metric. For each SummaryBatch run for METRICS, we will create metrics containing:
+        * The datasource candle period;
+        * The datetime of the first and last candles for each datasource / period;
+        * The number of candles for each datasource / period; and
+        * The minimum, maximum and average number of candles for each aggregation period for each datasource / period.
+    """
+    # The batch datasource / period and symbol
+    summary_batch = models.ForeignKey(SummaryBatch, on_delete=models.CASCADE)
+    datasource_candleperiod = models.ForeignKey(DataSourceCandlePeriod, on_delete=models.CASCADE)
+    datasource_symbol = models.ForeignKey(DataSourceSymbol, on_delete=models.CASCADE)
+
+    # First and last candles available for the datasource / period and the number of candles
+    first_candle_time = models.DateTimeField()
+    last_candle_time = models.DateTimeField()
+    num_candles = models.BigIntegerField()
+
+    # Min, max and avg for each aggregation period
+    minutes_min = models.BigIntegerField()
+    minutes_max = models.BigIntegerField()
+    minutes_avg = models.BigIntegerField()
+
+    hours_min = models.BigIntegerField()
+    hours_max = models.BigIntegerField()
+    hours_avg = models.BigIntegerField()
+
+    days_min = models.BigIntegerField()
+    days_max = models.BigIntegerField()
+    days_avg = models.BigIntegerField()
+
+    weeks_min = models.BigIntegerField()
+    weeks_max = models.BigIntegerField()
+    weeks_avg = models.BigIntegerField()
+
+    months_min = models.BigIntegerField()
+    months_max = models.BigIntegerField()
+    months_avg = models.BigIntegerField()
+
+    class Meta:
+        unique_together = ('summary_batch', 'datasource_candleperiod', 'datasource_symbol',)
+
+
+class SummaryMetricAllDatasources(models.Model):
+    """
+    The summary metrics calculated across all datasources for each candle period
+    """
+    # The batch, period and symbol
+    summary_batch = models.ForeignKey(SummaryBatch, on_delete=models.CASCADE)
+    period = models.CharField(max_length=3, choices=candle_periods)
+    symbol = models.ForeignKey(Symbol, on_delete=models.CASCADE)
+
+    # First and last candles available across all datasources for period, and the number of candles for the period
+    first_candle_time = models.DateTimeField()
+    last_candle_time = models.DateTimeField()
+    num_candles = models.BigIntegerField()
+
+    # Min, max and avg for each aggregation period
+    minutes_min = models.BigIntegerField()
+    minutes_max = models.BigIntegerField()
+    minutes_avg = models.BigIntegerField()
+
+    hours_min = models.BigIntegerField()
+    hours_max = models.BigIntegerField()
+    hours_avg = models.BigIntegerField()
+
+    days_min = models.BigIntegerField()
+    days_max = models.BigIntegerField()
+    days_avg = models.BigIntegerField()
+
+    weeks_min = models.BigIntegerField()
+    weeks_max = models.BigIntegerField()
+    weeks_avg = models.BigIntegerField()
+
+    months_min = models.BigIntegerField()
+    months_max = models.BigIntegerField()
+    months_avg = models.BigIntegerField()
+
+    class Meta:
+        unique_together = ('summary_batch', 'period', 'symbol',)
+
+
+class SummaryAggregation(models.Model):
+    """
+    The number of candles retrieved for each symbol / aggregation period by time
+    """
+
+    # The batch and datasource / period
+    summary_batch = models.ForeignKey(SummaryBatch, on_delete=models.CASCADE)
+    datasource_candleperiod = models.ForeignKey(DataSourceCandlePeriod, on_delete=models.CASCADE)
+
+    # Time, symbol, aggregation period and count
+    time = models.DateTimeField()
+    datasource_symbol = models.ForeignKey(DataSourceSymbol, on_delete=models.CASCADE)
+    aggregation_period = models.CharField(max_length=7, choices=aggregation_periods)
+    num_candles = models.BigIntegerField()
+
+    class Meta:
+        unique_together = ('summary_batch', 'datasource_candleperiod', 'time', 'datasource_symbol',
+                           'aggregation_period')
 
 
 # Receiver to delete task when DataSourceCandlePeriod is deleted

@@ -21,9 +21,9 @@ class PriceDataQualityForm(forms.Form):
                                   widget=DateTimeInput(attrs={'class': 'form-control', 'readonly': True}))
 
     # Data sources.
-    data_sources = forms.MultipleChoiceField(label="Data sources", required=True,
-                                             widget=forms.SelectMultiple(attrs={'class': 'form-control'}),
-                                             choices=[(ch, ch) for ch in datasources])
+    datasources = forms.MultipleChoiceField(label="Data sources", required=True,
+                                            widget=forms.SelectMultiple(attrs={'class': 'form-control'}),
+                                            choices=[(ch, ch) for ch in datasources])
 
     # Candle period. User can select from all available candle periods for datasources.
     candle_period = \
@@ -43,9 +43,9 @@ class PriceDataMetricsForm(forms.Form):
     periods = [dscp.period for dscp in models.DataSourceCandlePeriod.objects.filter(datasource__name__in=datasources)]
 
     # Data source.
-    data_source = forms.ChoiceField(label="Data source", required=True,
-                                    widget=forms.Select(attrs={'class': 'form-control'}),
-                                    choices=[('all', 'All')] + [(ch, ch) for ch in datasources])
+    datasource = forms.ChoiceField(label="Data source", required=True,
+                                   widget=forms.Select(attrs={'class': 'form-control'}),
+                                   choices=[('all', 'All')] + [(ch, ch) for ch in datasources])
 
     # Period
     candle_period = \
@@ -78,9 +78,3 @@ class PriceDataCandleForm(forms.Form):
         forms.ChoiceField(widget=forms.Select(attrs={'class': 'form-control'}), required=True,
                           choices=[(symbol, symbol) for symbol in symbols],
                           label="Symbol")
-
-
-class TestForm(forms.Form):
-    #  TODO Delete test form
-    x = forms.IntegerField()
-    y = forms.IntegerField()

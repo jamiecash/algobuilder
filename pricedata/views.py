@@ -12,17 +12,13 @@ from bokeh.plotting import figure
 from bokeh.transform import transform
 
 import pandas as pd
-from django.contrib import messages
-from django.db import connection
+from django.conf import settings
 from django.http import HttpResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.utils import timezone
 from django.views import View
 
-from algobuilder.utils import django_cache
-from pricedata import models, forms
-from pricedata.forms import TestForm
-from .tasks import test_task
+from pricedata import models, forms, tasks
 
 
 class IndexView(View):
@@ -30,38 +26,15 @@ class IndexView(View):
     template_name = "pricedata/index.html"
 
     def get(self, request):
-        return render(self.request, self.template_name, {})
+        # Return with the batch params
+        return render(self.request, self.template_name, BatchManager().get_batch_params())
 
     def post(self, request):
-        return HttpResponse("POST not supported", status=404)
+        # Run the batch
+        tasks.create_summary_data.delay()
 
-
-class TestView(View):
-    form_class = TestForm
-    template_name = "pricedata/test.html"
-
-    # Logger
-    __log = logging.getLogger(__name__)
-
-    def form_valid(self, form):
-        x = form.cleaned_data.get('x')
-        y = form.cleaned_data.get('x')
-        test_task.delay(x, y)
-        messages.success(self.request, 'We are doing the maths. Wait a moment and refresh this page.')
-        return render(self.request, self.template_name, {'test_text': 'Test View'})
-
-    def get(self, request):
-        return render(self.request, self.template_name, {'form': self.form_class()})
-
-    def post(self, request):
-        form = self.form_class(request.POST)
-        if form.is_valid():
-            x = form.cleaned_data.get('x')
-            y = form.cleaned_data.get('y')
-            test_task.delay(x, y)
-            messages.success(self.request, 'We are doing the maths. Wait a moment and refresh this page.')
-            return render(self.request, self.template_name, {'form': self.form_class(),
-                                                             'messages': messages})
+        # Redirect to index page. Index will pick up and report batch status
+        return redirect('/pricedata')
 
 
 class MetricsView(View):
@@ -76,19 +49,23 @@ class MetricsView(View):
     template_name = 'pricedata/metrics.html'
 
     def get(self, request):
-        # Initial params for chart
-        initial_params = {'data_source': 'all', 'candle_period': ViewData.get_most_used_period()}
+        # Initial params for chart and create params for post
+        initial_params = {'datasource': 'all', 'candle_period': get_most_used_period()}
+        params = {'form': self.form_class(initial=initial_params), 'datasource': initial_params['datasource']}
+        params = BatchManager().get_batch_params(params)
 
-        # Get summary data
-        data = ViewData().retrieve_price_data(initial_params['candle_period'])
-        summarised_data = ViewData().summarise_data(data)
-        formatted_data = MetricsView.__format_data(summarised_data=summarised_data,
-                                                   datasource_name=initial_params['data_source'])
+        # Redirect to index if we dont have a batch available
+        if not BatchManager().available:
+            return redirect('/pricedata')
+        else:
+            # Get the summary data
+            data = BatchManager.get_summary_data(initial_params['candle_period'], initial_params['datasource'])
 
-        return render(self.request, self.template_name,
-                      {'form': self.form_class(initial=initial_params),
-                       'summary_data': formatted_data,
-                       'datasource': initial_params['data_source']})
+            # Format the data and add to params
+            formatted_data = MetricsView.__format_data(data=data)
+            params['summary_data'] = formatted_data
+
+            return render(self.request, self.template_name, params)
 
     def post(self, request):
         # Get form from POST and check whether it's valid:
@@ -97,52 +74,53 @@ class MetricsView(View):
             # Cleaned data
             form_data = form.cleaned_data
 
-            # Get summary data
-            data = ViewData().retrieve_price_data(form_data['candle_period'])
-            summarised_data = ViewData().summarise_data(data)
-            formatted_data = MetricsView.__format_data(summarised_data=summarised_data,
-                                                       datasource_name=form_data['data_source'])
+            # Params
+            params = {'form': self.form_class(initial=form_data), 'datasource': form_data['datasource']}
+            params = BatchManager().get_batch_params(params)
 
-            return render(self.request, self.template_name,
-                          {'form': self.form_class(initial=form_data),
-                           'summary_data': formatted_data,
-                           'datasource': form_data['data_source']})
+            # Redirect to index if we dont have a batch available
+            if not BatchManager().available:
+                return redirect('/pricedata', params)
+            else:
+                # Get the summary data
+                data = BatchManager.get_summary_data(form_data['candle_period'], form_data['datasource'])
 
+                # Format the data and add to params
+                formatted_data = MetricsView.__format_data(data=data)
+                params['summary_data'] = formatted_data
+
+                return render(self.request, self.template_name, params)
         else:
             return HttpResponse("Invalid form", status=404)
 
     @staticmethod
-    def __format_data(summarised_data: pd.DataFrame, datasource_name: str = 'all') -> str:
+    def __format_data(data: pd.DataFrame) -> str:
         """
         Returns the HTML for the provided summary data. Formats as required for display.
 
-        :param summarised_data: A dataframe containing the summary data
-        :param datasource_name: The name of the datasource to produce the summary data for. 'all' will produce the
-            summarised data across all datasources.
+        :param data: A dataframe containing the summary data
 
         :return: html as string
         """
 
-        display = summarised_data
+        display = data
 
         # Merge the agg functions for datasource into cells for each aggregation period
         for agg in ['minutes', 'hours', 'days', 'weeks', 'months']:
-            # Get the min, max and avg columns and consolidate into a new column. Drop the existing ones.
-            min_col = f'{agg}_min_{datasource_name}'
-            max_col = f'{agg}_max_{datasource_name}'
-            avg_col = f'{agg}_avg_{datasource_name}'
-            display[agg] = 'min:' + display[min_col].astype(str) + ' max:' + display[max_col].astype(
+            # Get the min, max and avg columns and consolidate into a new column.
+            min_col = f'{agg}_min'
+            max_col = f'{agg}_max'
+            avg_col = f'{agg}_avg'
+
+            # Column name will be the agg but with a capital first letter for display purposes
+            display[agg.capitalize()] = 'min:' + display[min_col].astype(str) + ' max:' + display[max_col].astype(
                 str) + ' avg:' + display[avg_col].astype(str)
 
-        # Rename the columns that we will be keeping
+        # Rename first and last price columns. The rest should already be ok
         display = display.rename(
-            columns={'symbol': 'Symbol', 'instrument_type': 'Instrument Type',
-                     f'first_{datasource_name}': 'First Price',
-                     f'last_{datasource_name}': 'Last Price', 'minutes': 'Minutes', 'hours': 'Hours', 'days': 'Days',
-                     'weeks': 'Weeks',
-                     'months': 'Months'})
+            columns={'first_candle_time': 'First Price', 'last_candle_time': 'Last Price'})
 
-        # Reorder the columns, excluding any that we dont want to keep
+        # Select the columns that we want to keep in the correct order
         display = display[
             ['Symbol', 'Instrument Type', 'First Price', 'Last Price', 'Minutes', 'Hours', 'Days', 'Weeks',
              'Months']]
@@ -168,44 +146,72 @@ class QualityView(View):
     template_name = 'pricedata/quality.html'
 
     def get(self, request):
-        # Get summary data
-        data = ViewData().retrieve_price_data(ViewData.get_most_used_period())
-        summarised_data = ViewData().summarise_data(data)
+        # Redirect to index if we don't have a batch available
+        if not BatchManager().available:
+            return redirect('/pricedata')
+        else:
+            # Get the summary data
+            sumdata = BatchManager.get_summary_data(get_most_used_period(), 'all')
 
-        # Initial params for chart
-        initial_params = QualityView.__get_initial_form_values(summarised_data)
+            # Get initial values from summary data
+            initial_params = QualityView.__get_initial_form_values(sumdata)
 
-        # Get the charts
-        charts = self.__create_charts(data, summarised_data, initial_params)
+            # Get the aggregate data and chart for all datasources
+            all_charts = []
+            for datasource in initial_params['datasources']:
+                aggdata = BatchManager.get_aggregate_data(initial_params['candle_period'], datasource,
+                                                          initial_params['aggregation_period'],
+                                                          initial_params['from_date'], initial_params['to_date'])
 
-        return render(self.request, self.template_name,
-                      {'form': self.form_class(initial=initial_params),
-                       'charts': charts})
+                # Create chart and append to charts as tuple with datasource
+                chart = self.__create_chart(aggdata, sumdata, initial_params['aggregation_period'], datasource)
+                all_charts.append((datasource, chart))
+
+            # Add from and charts to params
+            params = {'form': self.form_class(initial=initial_params), 'charts': all_charts}
+            params = BatchManager().get_batch_params(params)
+
+            return render(self.request, self.template_name, params)
 
     def post(self, request):
-        # Get form from POST and check whether it's valid:
-        form = self.form_class(request.POST)
-        if form.is_valid():
-            # Cleaned data
-            form_data = form.cleaned_data
-
-            # Get summary data
-            data = ViewData.retrieve_price_data(form_data['candle_period'])
-            summarised_data = ViewData.summarise_data(data)
-
-            # Get the best aggregation period for the new from and to dates
-            form_data['aggregation_period'] = \
-                QualityView.__get_best_aggregation_period(form_data['from_date'], form_data['to_date'], 100)
-
-            # Get the charts
-            charts = self.__create_charts(data, summarised_data, form_data)
-
-            return render(self.request, self.template_name,
-                          {'form': self.form_class(initial=form_data),
-                           'charts': charts})
-
+        # Redirect to index if we dont have a batch available
+        if not BatchManager().available:
+            return redirect('/pricedata')
         else:
-            return HttpResponse("Invalid form", status=404)
+            # Get form from POST and check whether it's valid:
+            form = self.form_class(request.POST)
+            if form.is_valid():
+                # Cleaned data
+                form_data = form.cleaned_data
+
+                # Get the summary data
+                sumdata = BatchManager.get_summary_data(get_most_used_period(), 'all')
+
+                # Get the best aggregation period for the date range
+                aggregation_period = \
+                    QualityView.__get_best_aggregation_period(form_data['from_date'], form_data['to_date'],
+                                                              settings.ALGOBUILDER_PRICEDATA_MAXPLOTS)
+                form_data['aggregation_period'] = aggregation_period
+
+                # Get the aggregate data and chart for all datasources
+                all_charts = []
+                for datasource in form_data['datasources']:
+                    aggdata = BatchManager.get_aggregate_data(form_data['candle_period'], datasource,
+                                                              aggregation_period, form_data['from_date'],
+                                                              form_data['to_date'])
+
+                    # Create chart and append to charts as tuple with datasource
+                    chart = self.__create_chart(aggdata, sumdata, aggregation_period, datasource)
+                    all_charts.append((datasource, chart))
+
+                # Add from and charts to params
+                params = {'form': self.form_class(initial=form_data), 'charts': all_charts}
+                params = BatchManager().get_batch_params(params)
+
+                return render(self.request, self.template_name, params)
+
+            else:
+                return HttpResponse("Invalid form", status=404)
 
     @staticmethod
     def __get_initial_form_values(summarised_data: pd.DataFrame) -> Dict:
@@ -216,13 +222,15 @@ class QualityView(View):
 
         # From and to date will be the min first and max last dates in the summarised data for all datasources.
         # Datasources will be all. Period will have already been used to create the summary data, but will be set again.
-        initial = {'from_date': summarised_data['first_all'].min(), 'to_date': summarised_data['last_all'].max(),
-                   'data_sources': [ds.name for ds in models.DataSource.objects.all()],
-                   'candle_period': ViewData.get_most_used_period()}
+        initial = {'from_date': summarised_data['first_candle_time'].min(),
+                   'to_date': summarised_data['last_candle_time'].max(),
+                   'datasources': [ds.name for ds in models.DataSource.objects.all()],
+                   'candle_period': get_most_used_period()}
 
         # Aggregation period will be the best aggregation period to end up with ~100 plots
         initial['aggregation_period'] = \
-            QualityView.__get_best_aggregation_period(initial['from_date'], initial['to_date'], 100)
+            QualityView.__get_best_aggregation_period(initial['from_date'], initial['to_date'],
+                                                      settings.ALGOBUILDER_PRICEDATA_MAXPLOTS)
 
         return initial
 
@@ -267,123 +275,106 @@ class QualityView(View):
         return aggregation_period
 
     @staticmethod
-    def __create_charts(price_data: pd.DataFrame, summary_data: pd.DataFrame, params: Dict) -> Dict[str, str]:
+    def __create_chart(aggregate_data: pd.DataFrame, summary_data: pd.DataFrame, aggregation_period: str,
+                       datasource: str) -> str:
         """
-        Creates the heatmap charts for the supplied price data. One chart per
-        :param price_data: The price data to use to create the chart
+        Creates the heatmap chart for the supplied aggregate_data.
+        :param aggregate_data: The price data to use to create the chart
         :param summary_data: The summarised price data to use to determine ranges for heatmap
-        :param params: Dict containing:
-            from_date: The from date for the chart.
-            to_date: The from date for the chart.
-            data_sources: List of datasource names to include.
-            candle_period: The candle period to assess.
-            aggregation_period: 'minutes', 'hours', 'days', 'weeks', or 'months'. Will aggregate plots to period and
+        :param aggregation_period: minutes', 'hours', 'days', 'weeks', or 'months'. Will aggregate plots to period and
                 colour for count of values. This cannot be less than the candle period that the price data was
                 retrieved for, i.e., if price data is daily candles [1D], then period must be 'days', 'weeks' or
                 'months'. It cannot be 'minutes' or 'hours'. Colouring will use the summary data to determine max ranges
                 for aggregation period.
+        :param datasource: The datasource name
 
-        :return: Dict[datasource_name: chart JSON HTML].
+        :return: JSON HTML.
         """
-        chart_htmls = {}
+        # Get the maximum number of prices for the aggregation period for use in heatmap range.
+        max_agg = summary_data[f"{aggregation_period}_max"].max()
 
-        for ds in params['data_sources']:
-            # filter the price data
-            chart_data = price_data[(price_data['time'] >= params['from_date']) &
-                                    (price_data['time'] <= params['to_date']) &
-                                    (price_data['datasource'].isin(params['data_sources']))]
+        # Aggregate data for the aggregation period.
+        if len(aggregate_data.index) > 0:
+            # Convert time to str
+            aggregate_data['time'] = aggregate_data['time'].dt.strftime('%Y-%m-%d %H:%M:%S')
 
-            # Get the maximum number of prices for the aggregation period for use in heatmap range.
-            max_agg = summary_data[f"{params['aggregation_period']}_max_all"].max()
+            # Generate heatmap chart. Colours range from green to red using range 0 to max_agg
+            source = ColumnDataSource(aggregate_data)
+            QualityView.__log.debug(f"Producing JSON data for heatmap using source data: {source.data}")
+            colors = ["#B21F35", "#D82735", "#FF7435", "#FFA135", "#FFCB35", "#FFF735", "#16DD36", "#009E47",
+                      "#00753A"]
+            mapper = LinearColorMapper(palette=colors, low=0, high=max_agg)
 
-            # Aggregate data for the aggregation period.
-            if len(chart_data.index) > 0:
-                rules = {'minutes': 'T', 'hours': 'H', 'days': 'D', 'weeks': 'W', 'months': 'M'}
-                aggregated_data = chart_data.groupby([pd.Grouper(key='time', freq=rules[params['aggregation_period']]),
-                                                     'symbol']).size().reset_index(name='count')
+            # Select tool to drill down into more granular period, and hover tool to show time, symbol and count on
+            # mouseover
+            select = BoxSelectTool(dimensions='width',
+                                   description='Select chart area to drill down into more granular time periods.')
 
-                # Convert time to str
-                aggregated_data['time'] = aggregated_data['time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            hover = HoverTool()
 
-                # Generate heatmap chart. Colours range from green to red using range 0 to max_agg
-                source = ColumnDataSource(aggregated_data)
-                QualityView.__log.debug(f"Producing JSON data for heatmap using source data: {source.data}")
-                colors = ["#B21F35", "#D82735", "#FF7435", "#FFA135", "#FFCB35", "#FFF735", "#16DD36", "#009E47",
-                          "#00753A"]
-                mapper = LinearColorMapper(palette=colors, low=0, high=max_agg)
+            # Display date and symbol for hover
+            tooltips = [
+                ("Symbol / Time", "@symbol, @time"),
+                ("Num Candles", "@num_candles"),
+            ]
 
-                # Select tool to drill down into more granular period, and hover tool to show time, symbol and count on
-                # mouseover
-                select = BoxSelectTool(dimensions='width',
-                                       description='Select chart area to drill down into more granular time periods.')
+            p = figure(title=f"Prices available by time period and symbol for {datasource}",
+                       plot_width=1000, x_range=aggregate_data['time'].drop_duplicates(),
+                       y_range=aggregate_data['symbol'].drop_duplicates(),
+                       toolbar_location='below', tools=[hover, select], tooltips=tooltips,
+                       x_axis_location="above")
 
-                hover = HoverTool()
+            p.rect(x="time", y="symbol", width=1, height=1, source=source, line_color=None,
+                   fill_color=transform('num_candles', mapper))
 
-                # Display date and symbol for hover
-                tooltips = [
-                    ("Symbol / Time", "@symbol, @time"),
-                    ("Num Candles", "@count"),
-                ]
+            color_bar = ColorBar(color_mapper=mapper,
+                                 ticker=BasicTicker(desired_num_ticks=len(colors)),
+                                 formatter=BasicTickFormatter())
 
-                p = figure(title=f"Prices available by time period and symbol for {ds}",
-                           plot_width=1000, x_range=aggregated_data['time'].drop_duplicates(),
-                           y_range=aggregated_data['symbol'].drop_duplicates(),
-                           toolbar_location='below', tools=[hover, select], tooltips=tooltips,
-                           x_axis_location="above")
+            p.add_layout(color_bar, 'right')
 
-                p.rect(x="time", y="symbol", width=1, height=1, source=source, line_color=None,
-                       fill_color=transform('count', mapper))
+            p.axis.axis_line_color = None
+            p.axis.major_tick_line_color = None
+            p.axis.major_label_text_font_size = "7px"
+            p.axis.major_label_standoff = 0
+            p.xaxis.major_label_orientation = 1.0
 
-                color_bar = ColorBar(color_mapper=mapper,
-                                     ticker=BasicTicker(desired_num_ticks=len(colors)),
-                                     formatter=BasicTickFormatter())
+            # When a range is selected on the chart, the form from and to dates should be updated. Selection
+            # contains every element selected across both x and y axis. We will get the from and 2 dates using the
+            # first and last item in the selection. We will then populate the from date and to date form objects by
+            # searching for their ids, which should be id_from_date and id_to_date.
+            source.selected.js_on_change(
+                "indices",
+                CustomJS(
+                    args=dict(source=source),
+                    code="""
+                    var inds = cb_obj.indices;
+                    var data = source.data;
+                    var xstart = data['time'][inds[0]]
+                    
+                    // Try getting +1
+                    var xend = data['time'][inds[inds.length - 1] +1 ]
 
-                p.add_layout(color_bar, 'right')
+                    // If undefined, get last
+                    if (typeof(xend) == "undefined") {
+                        xend = data['time'][inds[inds.length - 1]]
+                    }         
+                    
+                    //Update the field forms
+                    const from_date_element = document.getElementById("id_from_date");
+                    const to_date_element = document.getElementById("id_to_date");
+                    from_date_element.value = xstart
+                    to_date_element.value = xend
+                    """,
+                ),
+            )
 
-                p.axis.axis_line_color = None
-                p.axis.major_tick_line_color = None
-                p.axis.major_label_text_font_size = "7px"
-                p.axis.major_label_standoff = 0
-                p.xaxis.major_label_orientation = 1.0
+            json_txt = json.dumps(json_item(p))
 
-                # When a range is selected on the chart, the form from and to dates should be updated. Selection
-                # contains every element selected across both x and y axis. We will get the from and 2 dates using the
-                # first and last item in the selection. We will then populate the from date and to date form objects by
-                # searching for their ids, which should be id_from_date and id_to_date.
-                source.selected.js_on_change(
-                    "indices",
-                    CustomJS(
-                        args=dict(source=source),
-                        code="""
-                        var inds = cb_obj.indices;
-                        var data = source.data;
-                        var xstart = data['time'][inds[0]]
-                        
-                        // Try getting +1
-                        var xend = data['time'][inds[inds.length - 1] +1 ]
+            QualityView.__log.debug(f"Produced JSON text for {datasource} graph: {json_txt}")
 
-                        // If undefined, get last
-                        if (typeof(xend) == "undefined") {
-                            xend = data['time'][inds[inds.length - 1]]
-                        }         
-                        
-                        //Update the field forms
-                        const from_date_element = document.getElementById("id_from_date");
-                        const to_date_element = document.getElementById("id_to_date");
-                        from_date_element.value = xstart
-                        to_date_element.value = xend
-                        """,
-                    ),
-                )
-
-                json_txt = json.dumps(json_item(p))
-
-                QualityView.__log.debug(f"Produced JSON text for {ds} graph: {json_txt}")
-
-                # Add the json html
-                chart_htmls[ds] = json_txt
-
-            return chart_htmls
+            # Return json html
+            return json_txt
 
 
 class CandlesView(View):
@@ -533,100 +524,134 @@ class CandlesView(View):
         return chart_html
 
 
-class ViewData:
+class BatchManager:
     """
-    A class to retrieve and summarise the data required in the price data views
+    Utility for using data summary batches
     """
-
-    @django_cache(cache_name='price_data')
-    def retrieve_price_data(self, period: str) -> pd.DataFrame:
+    @property
+    def available(self):
         """
-        Retrieves the price data.
-
-        :param period: The candle period that we are producing the dashboard for
-
-        :return: DataFrame containing price data
+        Whether there is a completed batch available
+        :return:
         """
-        sql = """SELECT	s.name AS symbol,
-                        s.instrument_type AS instrument_type,
-                        ds.name AS datasource,
-                        cdl.time AS time
-                FROM public.pricedata_datasourcesymbol dss
-                    INNER JOIN pricedata_datasource ds ON dss.datasource_id = ds.id
-                    INNER JOIN pricedata_symbol s ON dss.symbol_id = s.id
-                    INNER JOIN pricedata_candle cdl ON cdl.datasource_symbol_id = dss.id  
-                WHERE dss.retrieve_price_data = true
-                    AND cdl.period = %(period)s"""
+        # Get all completed batches
+        batches = models.SummaryBatch.objects.filter(status=models.SummaryBatch.STATUS_COMPLETE).order_by('time')
 
-        price_data = pd.read_sql_query(sql=sql, con=connection, params={'period': period})
+        # Do we have any
+        return batches is not None and len(batches) > 0
 
-        return price_data
-
-    @django_cache(cache_name='price_data')
-    def summarise_data(self, price_data: pd.DataFrame) -> pd.DataFrame:
+    @property
+    def in_progress(self):
         """
-        Produces a data summary dashboard from provided data showing:
-            * The datetime of the first and last candles for each datasource;
-            * The number of candles for each datasource;
-            * The minimum, maximum and average number of candles for each aggregation period for each datasource; and
-            * The minimum, maximum and average number of candles for each aggregation period across all datasources.
-
-        :param price_data: The candle period that we are producing the dashboard for
+        Whether a batch is in progress
+        :return:
         """
-        # First group by to get min and max times
-        grouped = price_data.groupby(['symbol', 'instrument_type', 'datasource']).agg(first=('time', 'min'),
-                                                                                      last=('time', 'max'),
-                                                                                      count=('time', 'count'))
+        # TODO. This will show failed batches as in progress. Need to check celery queue.
+        # Get all in progress batches
+        batches = models.SummaryBatch.objects.filter(status=models.SummaryBatch.STATUS_IN_PROGRESS).order_by('time')
 
-        # Now get min, max and mean for each aggregation period for each datasource.
-        # 'minutes': 'T', 'hours': 'H', 'days': 'D', 'weeks': 'W', 'months': 'M'
-        aggs = {'minutes': 'T', 'hours': 'H', 'days': 'D', 'weeks': 'W', 'months': 'M'}
+        # Do we have any
+        return batches is not None and len(batches) > 0
 
-        for key in aggs:
-            # Get counts for aggregation period, then group by symbol, instrument type and datasource to get min,
-            # max and avg counts for aggregation period
-            agg_period_ungrouped = price_data.groupby(
-                ['symbol', 'instrument_type', 'datasource', pd.Grouper(key='time', freq=aggs[key])]).agg(
-                count=('time', 'count'))
-            agg_period_grouped = agg_period_ungrouped.groupby(['symbol', 'instrument_type', 'datasource']).agg(
-                min=('count', 'min'), max=('count', 'max'), avg=('count', 'median'))
+    @property
+    def last_available(self) -> models.SummaryBatch:
+        """
+        Returns the last available batch
+        :return: Last batch. None if there aren't any.
+        """
+        # Get all completed batches
+        batches = models.SummaryBatch.objects.filter(status=models.SummaryBatch.STATUS_COMPLETE).order_by('-time')
 
-            # Rename columns to include aggregation period key, then merge into original dataframe
-            agg_period_grouped = agg_period_grouped.rename(
-                columns={'min': f'{key}_min', 'max': f'{key}_max', 'avg': f'{key}_avg'})
-            grouped = grouped.join(agg_period_grouped, on=['symbol', 'instrument_type', 'datasource'])
+        # Do we have any
+        return None if len(batches) == 0 else batches[0]
 
-        # Now unstack, so we show columns for each datasource
-        grouped = grouped.unstack()
+    def get_batch_params(self, params: Dict[str, any] = None) -> Dict[str, any]:
+        """
+        Populate params with the last_batch_time and batch_status.
+        :param params: Params to add to. If not supplied, then new params will be created
+        :return:
+        """
+        params = {} if params is None else params
+        params['batch_available'] = self.available
+        params['batch_in_progress'] = self.in_progress
+        if self.last_available is not None:
+            params['last_available_batch'] = self.last_available
 
-        # Create the same aggregations but across all datasources
-        agg_cols = set([x[0] for x in grouped.columns])
-        ds_cols = set([x[1] for x in grouped.columns])
-
-        for agg_col in agg_cols:
-            if '_min' in agg_col or agg_col == 'first':
-                grouped[(agg_col, 'all')] = grouped[[(agg_col, ds) for ds in ds_cols]].min(axis=1)
-            elif '_max' in agg_col or agg_col == 'last':
-                grouped[(agg_col, 'all')] = grouped[[(agg_col, ds) for ds in ds_cols]].max(axis=1)
-            elif '_avg' in agg_col:
-                grouped[(agg_col, 'all')] = grouped[[(agg_col, ds) for ds in ds_cols]].mean(axis=1)
-
-        # Flatten the columns and reset the index
-        grouped.columns = ['_'.join(col).strip() for col in grouped.columns]
-        grouped = grouped.reset_index()
-
-        return grouped
+        return params
 
     @staticmethod
-    def get_most_used_period() -> str:
+    def get_summary_data(period: str, datasource: str = 'all') -> pd.DataFrame:
         """
-        Returns the most used candle period. This will be the period that is common across the largest
-        number of datasources. This will be used as the initial value for the forms
-        :return: period
+        Gets the summary data from the last batch for the specified period
+        :param period: The candle period for the summary data
+        :param datasource: The datasource for the candle data. 'all' for a summary across all datasources. 'all' is
+            default.
+        :return:
         """
-        datasources = [ds.name for ds in models.DataSource.objects.all()]
-        periods = [dscp.period for dscp in
-                   models.DataSourceCandlePeriod.objects.filter(datasource__name__in=datasources)]
-        most_used_period = None if len(periods) == 0 else Counter(periods).most_common(1)[0][0]
+        # Get the last available batch
+        last_batch = BatchManager().last_available
 
-        return most_used_period
+        if datasource == 'all':
+            # Get the summary metrics for all datasources
+            metrics = models.SummaryMetricAllDatasources.objects.filter(summary_batch=last_batch, period=period)
+        else:
+            # Get the datasource candle period fo the selected datasource and period
+            dscp = models.DataSourceCandlePeriod.objects.filter(datasource__name=datasource, period=period)[0]
+            metrics = models.SummaryMetric.objects.filter(summary_batch=last_batch, datasource_candleperiod=dscp)
+
+        # Symbol name and instrument type columns will follow different orm paths depending on whether we got data from
+        # all datasources or from a specified one.
+        symbol_name_col = 'symbol__name' if datasource == 'all' else 'datasource_symbol__symbol__name'
+        instrument_type_col = 'symbol__instrument_type' if datasource == 'all' else \
+            'datasource_symbol__symbol__instrument_type'
+        data = pd.DataFrame(
+            list(metrics.values(symbol_name_col, instrument_type_col, 'first_candle_time', 'last_candle_time',
+                                'minutes_min', 'minutes_max', 'minutes_avg', 'hours_min', 'hours_max', 'hours_avg',
+                                'days_min', 'days_max', 'days_avg', 'weeks_min', 'weeks_max', 'weeks_avg',
+                                'months_min', 'months_max', 'months_avg')))
+
+        # Rename the symbol name and instrument type columns so they are the same across both sources
+        data = data.rename(columns={symbol_name_col: 'Symbol', instrument_type_col: 'Instrument Type'})
+
+        return data
+
+    @staticmethod
+    def get_aggregate_data(period: str, datasource: str, aggregation_period: str, from_date, to_date) -> pd.DataFrame:
+        """
+        Gets the aggregate data from the last batch for the specified period and datasoruce
+        :param period: The candle period for the summary data
+        :param datasource: The datasource for the candle data.
+        :param aggregation_period. The aggregation period to aggregate the data to.
+        :param from_date: Get aggregation from this date
+        :param to_date: Get aggregation data to this date
+        :return:
+        """
+        # Get the last available batch
+        last_batch = BatchManager().last_available
+
+        # Get the datasource candle period fo the selected datasource and period
+        dscp = models.DataSourceCandlePeriod.objects.filter(datasource__name=datasource, period=period)[0]
+        agg_qs = models.SummaryAggregation.objects.filter(summary_batch=last_batch, datasource_candleperiod=dscp,
+                                                          aggregation_period=aggregation_period, time__gte=from_date,
+                                                          time__lte=to_date)
+        data = pd.DataFrame(list(agg_qs.values('datasource_symbol__symbol__name', 'time', 'num_candles', )))
+
+        # Rename the symbol column
+        data = data.rename(columns={'datasource_symbol__symbol__name': 'symbol'})
+
+        return data
+
+
+# Some methods used across all views
+def get_most_used_period() -> str:
+    """
+    Returns the most used candle period. This will be the period that is common across the largest
+    number of datasources. This will be used as the initial value for the forms
+    :return: period
+    """
+    datasources = [ds.name for ds in models.DataSource.objects.all()]
+    periods = [dscp.period for dscp in
+               models.DataSourceCandlePeriod.objects.filter(datasource__name__in=datasources)]
+    most_used_period = None if len(periods) == 0 else Counter(periods).most_common(1)[0][0]
+
+    return most_used_period

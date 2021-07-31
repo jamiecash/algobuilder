@@ -39,6 +39,7 @@
                         Price Data
                     </button>
                     <div class="dropdown-menu">
+                        <a class="dropdown-item" href="/pricedata/">Run Batch</a>
                         <a class="dropdown-item" href="/pricedata/metrics/">Metrics</a>
                         <a class="dropdown-item" href="/pricedata/quality">Quality</a>
                         <a class="dropdown-item" href="/pricedata/candles">Candles</a>
@@ -57,8 +58,22 @@
                 </div>
             </div>
         </nav>
-        {% block content %}
-        {% endblock content %}
+        {% block statusbar %}
+        {% endblock statusbar %}
+        <!-- Page split into 2 columns, the sidebar containing the form and the main content. -->
+        <div class="container-fluid">
+            <div class="row">
+                <!-- First column containing form -->
+                <div class="col-md-2 bg-light sidebar-sticky">
+                    {% block sidebar %}
+                    {% endblock sidebar %}
+                </div>
+                <main class="col-md-10">
+                    {% block main %}
+                    {% endblock main %}
+                </main>
+            </div>
+        </div>
         <hr>
         <div class="row">
             <div class="col-sm-12 text-center small">(c)2021 AlgoBuilder</div>

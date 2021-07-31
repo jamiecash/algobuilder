@@ -1,0 +1,25 @@
+<div class="container-fluid">
+    <div class="row">
+        {% if batch_available == True and batch_in_progress == True %}
+            <div class="col-md-12 alert alert-primary">
+                Last batch time: {{ last_available_batch.time }} - Batch In Progress
+            </div>
+        {% elif batch_available == True and batch_in_progress == False %}
+            <div class="col-md-12 alert alert-primary">
+                Last batch time: {{ last_available_batch.time }}
+            </div>
+        {% elif batch_available == False and batch_in_progress == True %}
+            <div class="col-md-12 alert alert-warning">
+                No batched data is available. Batch in progress. Please come back later.
+            </div>
+        {% elif batch_available == False and batch_in_progress == False %}
+            <div class="col-md-12 alert alert-danger">
+                No batched data is available. Please run the summary pricedata batch process and come back later to view the dashboards.
+            </div>
+        {% else %}
+            <div class="col-md-12 alert alert-danger">
+                Batch status not available
+            </div>
+        {% endif %}
+    </div>
+</div>

@@ -1,50 +1,50 @@
 {% extends "base.html" %}
 
-{% block content %}
-<!-- Page split into 2 columns, the sidebar containing the form and the main content. -->
-<div class="container-fluid">
-    <div class="row">
-        <!-- First column containing form -->
-        <div class="col-md-2 bg-light sidebar-sticky">
-            <form method="post">
-                {% csrf_token %}
-                <ul class="list-group">
-                  <li class="list-group-item">
-                      <h1 class="h2">Filters</h1>
-                      {% if form.errors %}
-                        <div class="invalid-feedback">{{ form.errors }}</div>
-                      {% endif %}
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.data_source.label }}</div>
-                        <div class="flex-fill">{{ form.data_source }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.candle_period.label }}</div>
-                        <div class="flex-fill">{{ form.candle_period }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <input class="btn btn-primary" type="submit" value="Submit">
-                  </li>
-                </ul>
-            </form>
-        </div>
-        <!-- Second column containing main content. This will contain the summary table -->
-        <main class="col-md-10">
-            <!-- The table header and table -->
-            <h2 class="h2 row">Data Quality Summary - {{ datasource }}</h2>
-            <div class="row">
+{% block statusbar %}
+    {% include "pricedata/statusbar.html" %}
+{% endblock statusbar %}
+
+{% block sidebar %}
+    <form method="post">
+        {% csrf_token %}
+        <ul class="list-group">
+          <li class="list-group-item">
+              <h1 class="h2">Filters</h1>
+              {% if form.errors %}
+                <div class="invalid-feedback">{{ form.errors }}</div>
+              {% endif %}
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.datasource.label }}</div>
+                <div class="flex-fill">{{ form.datasource }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.candle_period.label }}</div>
+                <div class="flex-fill">{{ form.candle_period }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <input class="btn btn-primary" type="submit" value="Submit">
+          </li>
+        </ul>
+    </form>
+{% endblock sidebar %}
+
+{% block main %}
+    <div class="card">
+        <div class="card-body">
+            <h2 class="card-title">Data Quality Summary - {{ datasource }}</h2>
+            <h3 class="card-subtitle mb-2 text-muted">Price data statistics by symbol and aggregation period.</h3>
+            <div class="card-text">
                 {% if summary_data %}
                     {{ summary_data|safe }}
                 {% else %}
                     <p>No data available.</p>
                 {% endif %}
             </div>
-        </main>
+        </div>
     </div>
-</div>
-{% endblock content %}
+{% endblock main %}

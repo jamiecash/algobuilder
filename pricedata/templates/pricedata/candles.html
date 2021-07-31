@@ -1,55 +1,52 @@
 {% extends "base.html" %}
 
-{% block content %}
-<!-- Page split into 2 columns, the sidebar containing the form and the main content. -->
-<div class="container-fluid">
-    <div class="row">
-        <!-- First column containing form -->
-        <div class="col-md-2 bg-light sidebar-sticky">
-            <form method="post">
-                {% csrf_token %}
-                <ul class="list-group">
-                  <li class="list-group-item">
-                      <h1 class="h2">Filters</h1>
-                      {% if form.errors %}
-                        <div class="invalid-feedback">{{ form.errors }}</div>
-                      {% endif %}
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.datasource_period.label }}</div>
-                        <div class="flex-fill">{{ form.datasource_period }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.symbol.label }}</div>
-                        <div class="flex-fill">{{ form.symbol }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.from_date.label }}</div>
-                        <div class="flex-fill">{{ form.from_date }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <div class="form-group">
-                        <div class="form-label">{{ form.to_date.label }}</div>
-                        <div class="flex-fill">{{ form.to_date }}</div>
-                    </div>
-                  </li>
-                  <li class="list-group-item">
-                    <input class="btn btn-primary" type="submit" value="Submit">
-                  </li>
-                </ul>
-            </form>
-        </div>
-        <!-- Second column containing main content. This will contain the candle chart -->
-        <main class="col-md-10">
-            <!-- The table header and table -->
-            <h2 class="h2 row">OHLC Prices for - {{ symbol }}</h2>
-            <div class="row">
+{% block sidebar %}
+    <form method="post">
+        {% csrf_token %}
+        <ul class="list-group">
+          <li class="list-group-item">
+              <h1 class="h2">Filters</h1>
+              {% if form.errors %}
+                <div class="invalid-feedback">{{ form.errors }}</div>
+              {% endif %}
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.datasource_period.label }}</div>
+                <div class="flex-fill">{{ form.datasource_period }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.symbol.label }}</div>
+                <div class="flex-fill">{{ form.symbol }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.from_date.label }}</div>
+                <div class="flex-fill">{{ form.from_date }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <div class="form-group">
+                <div class="form-label">{{ form.to_date.label }}</div>
+                <div class="flex-fill">{{ form.to_date }}</div>
+            </div>
+          </li>
+          <li class="list-group-item">
+            <input class="btn btn-primary" type="submit" value="Submit">
+          </li>
+        </ul>
+    </form>
+{% endblock sidebar %}
+
+{% block main %}
+    <div class="card">
+        <div class="card-body">
+            <h2 class="card-title">OHLC Prices for - {{ symbol }}</h2>
+            <h3 class="card-subtitle mb-2 text-muted">Candles show open, high, low and close prices for selected symbol across date range.</h3>
+            <div class="card-text">
                 <div id="chart"></div>
                 {% if chart %}
                     <script>
@@ -60,7 +57,6 @@
                     <p>No data. Please select a symbol and date range that has data available and submit form.</p>
                 {% endif %}
             </div>
-        </main>
+        </div>
     </div>
-</div>
-{% endblock content %}
+{% endblock main %}

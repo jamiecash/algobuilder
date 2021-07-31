@@ -15,9 +15,6 @@ urlpatterns = [
     path('metrics/', views.MetricsView.as_view(), name='metrics'),
     path('quality/', views.QualityView.as_view(), name='quality'),
     path('candles/', views.CandlesView.as_view(), name='candles'),
-
-    # A test page for development. TODO Remove this, test.html and TestView
-    path('test/', views.TestView.as_view(), name="test"),
 ]
 
 urlpatterns += staticfiles_urlpatterns()

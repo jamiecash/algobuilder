@@ -1,5 +1,4 @@
 import logging
-
 import pandas as pd
 from datetime import timedelta
 
@@ -9,7 +8,7 @@ from django.utils import timezone
 from django.db import connection
 
 from pricedata import datasource
-from pricedata.models import Candle
+from algobuilder.utils import DatabaseUtility
 
 
 @shared_task
@@ -67,8 +66,8 @@ def retrieve_prices(datasource_candleperiod_id: int):
 
                 # Update or insert. We need he data, the table name and the list of unique fields.
                 unique_fields = ['datasource_symbol_id', 'time', 'period']
-                table = Candle.objects.model._meta.db_table
-                bulk_insert_or_update(data=data, table=table, unique_fields=unique_fields)
+                table = models.Candle.objects.model._meta.db_table
+                DatabaseUtility.bulk_insert_or_update(data=data, table=table, unique_fields=unique_fields)
             except datasource.DataNotAvailableException as ex:
                 log.warning(ex)
     else:
@@ -127,54 +126,97 @@ def retrieve_symbols(datasource_id):
         models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)
 
 
-def bulk_insert_or_update(data: pd.DataFrame, table: str, unique_fields):
+# noinspection PyTypeChecker
+@shared_task
+def create_summary_data():
     """
-    Bulk insert or update (upsert) of price data. If pk already exists, then update else insert
-
-    :param data: The pandas dataframe to insert / update to db. The columns in the dataframe must match the table
-        columns.
-    :param table: The name of the table to update
-    :param unique_fields: Fields that will raise the unique key constraint on insert
+    Creates summary data from candles for use by the data quality dashboards and charts.
     :return:
     """
 
-    # Logger
-    log = logging.getLogger(__name__)
+    from pricedata import models  # Imported when needed, due to circular dependency
 
-    # Do we have any data
-    if data is not None and len(data.index) > 0:
-        # Get create fields from dataframe and the update fields as the create fields - unique fields
-        create_fields = data.columns
-        update_fields = set(create_fields) - set(unique_fields)
+    # Create the batch
+    batch = models.SummaryBatch(time=timezone.now(), status=models.SummaryBatch.STATUS_IN_PROGRESS)
+    batch.save()
 
-        # Get teh values from the data
-        values = [tuple(x) for x in data.to_numpy()]
+    # Get all price data
+    sql = """SELECT	dscp.id AS datasource_candleperiod_id,
+                    dss.id AS datasource_symbol_id,
+                    dss.symbol_id AS symbol_id,
+                    dscp.period AS period,
+                    cdl.time AS time
+            FROM pricedata_datasourcesymbol dss
+                    INNER JOIN pricedata_candle cdl
+                        ON cdl.datasource_symbol_id = dss.id
+                    INNER JOIN pricedata_datasourcecandleperiod dscp
+                        ON dss.datasource_id = dscp.datasource_id  AND 
+                            cdl.period = dscp.period
+            WHERE dss.retrieve_price_data = true"""
 
-        cursor = connection.cursor()
+    price_data = pd.read_sql_query(sql=sql, con=connection)
 
-        # Mogrify values to bind into sql.
-        mogvals = [cursor.mogrify("(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", val).decode('utf8') for val in values]
+    # Our summary views will contain min, max and mean aggregates for each aggregation period
+    aggs = {'minutes': 'T', 'hours': 'H', 'days': 'D', 'weeks': 'W', 'months': 'M'}
 
-        # Build list of x = excluded.x columns for SET part of sql
-        on_duplicates = []
-        for field in update_fields:
-            on_duplicates.append(field + "=excluded." + field)
+    # We will create 2 summary views, one by datasource and one across datasources
+    summary_by_ds_groupby = ['datasource_symbol_id', 'datasource_candleperiod_id']
+    symmary_across_ds_groupby = ['symbol_id', 'period']
+    group_bys = [summary_by_ds_groupby, symmary_across_ds_groupby]
+    tables = [models.SummaryMetric.objects.model._meta.db_table,
+              models.SummaryMetricAllDatasources.objects.model._meta.db_table]
 
-        # SQL
-        sql = f"INSERT INTO {table} ({','.join(list(create_fields))}) VALUES {','.join(mogvals)} " \
-              f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
+    for i in range(0, 2):
+        group_by = group_bys[i]
+        table = tables[i]
 
-        log.debug(f"Saving {len(data.index)} prices.")
-        cursor.execute(sql)
-        cursor.close()
-    else:
-        log.debug(f"No prices to retrieved to save.")
+        grouped = price_data.groupby(group_by).agg(first_candle_time=('time', 'min'), last_candle_time=('time', 'max'),
+                                                   num_candles=('time', 'count'))
 
+        for key in aggs:
+            # Get counts for aggregation period, then group by datasource symbol and datasource candleperiod to get min,
+            # max and avg counts for each aggregation period
+            agg_period_ungrouped = \
+                price_data.groupby(group_by + [pd.Grouper(key='time', freq=aggs[key]), ]).agg(count=('time', 'count'))
 
-@shared_task
-def test_task(x, y):
-    # TODO Delete test task
-    # Logger
-    log = logging.getLogger(__name__)
+            agg_period_grouped = agg_period_ungrouped.groupby(group_by).agg(
+                min=('count', 'min'), max=('count', 'max'), avg=('count', 'median'))
 
-    log.info(f"{x}x{y}={x*y}")
+            # Rename columns to include aggregation period key, then merge into original dataframe
+            agg_period_grouped = agg_period_grouped.rename(
+                columns={'min': f'{key}_min', 'max': f'{key}_max', 'avg': f'{key}_avg'})
+            grouped = grouped.join(agg_period_grouped, on=group_by)
+
+        # Reset the grouped index so we end up with a flat dataframe
+        grouped = grouped.reset_index()
+
+        # Add the summary batch id
+        grouped['summary_batch_id'] = batch.id
+
+        # Insert into db
+        DatabaseUtility.bulk_insert_or_update(data=grouped, table=table, batch_size=100)
+
+    # We will also aggregate the times across each aggregation period and symbol for all datasources and periods.
+    # We will only aggregate enough data for each aggregation period for maxplots plots
+    grouped = None
+    group_by = ['datasource_symbol_id', 'datasource_candleperiod_id']
+
+    for key in aggs:
+        # Create grouped for agg period
+        agg_grouped = price_data.groupby(group_by + [pd.Grouper(key='time', freq=aggs[key]), ]).size().reset_index(
+            name='num_candles')
+
+        # Add aggregation period and batch
+        agg_grouped['aggregation_period'] = key
+        agg_grouped['summary_batch_id'] = batch.id
+
+        # Add agg group to grouped
+        grouped = agg_grouped if grouped is None else grouped.append(agg_grouped)
+
+    # Insert into db
+    table = models.SummaryAggregation.objects.model._meta.db_table
+    DatabaseUtility.bulk_insert_or_update(data=grouped, table=table,  batch_size=100)
+
+    # Batch complete
+    batch.status = models.SummaryBatch.STATUS_COMPLETE
+    batch.save()
