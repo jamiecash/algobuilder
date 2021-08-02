@@ -1,3 +1,4 @@
+import datetime
 from decimal import Decimal
 
 import pandas as pd
@@ -112,7 +113,7 @@ class DataSourceCandlePeriodTests(TestCase):
 
 
 # Tests for tasks
-class DataRetrieverTests(TestCase):
+class TasksTest(TestCase):
     plugin_class = None
 
     def setUp(self) -> None:
@@ -223,4 +224,70 @@ class DataRetrieverTests(TestCase):
         # We should have 5 candles as the first 5 should have been updated
         candles = models.Candle.objects.all()
         self.assertEquals(len(candles), 5)
+
+    def test_summary_data(self):
+        """
+        Test that the summary data accurately reflects the candle data
+        :return:
+        """
+
+        # Create 10 symbols
+        for symbol_name in [f'SYMBOL_{i}' for i in range(0, 10)]:
+            symbol = models.Symbol(name=symbol_name, instrument_type='FOREX')
+            symbol.save()
+
+        # Create 3 datasources, each with 3 candle periods. Each datasource will have all symbols
+        datasources = []
+        for i in range(0, 3):
+            ds = models.DataSource(name=f'DS{i}', pluginclass=self.plugin_class, connection_params={'a': i})
+            ds.save()
+            for period in ['1S', '1M', '1H']:
+                dscp = models.DataSourceCandlePeriod(datasource=ds, period=period, start_from=timezone.now())
+                dscp.save()
+
+            for symbol in models.Symbol.objects.all():
+                dss = models.DataSourceSymbol(datasource=ds, symbol=symbol, retrieve_price_data=True)
+                dss.save()
+
+                # Create 1000 prices for every symbol for every period, 1 second apart
+                now = timezone.now()
+                for j in range(0, 1000):
+                    for period in ['1S', '1M', '1H']:
+                        candle = models.Candle(datasource_symbol=dss, time=now + timedelta(seconds=j),
+                                               period=period, bid_open=j, bid_high=j, bid_low=j, bid_close=j,
+                                               ask_open=j, ask_close=j, ask_high=j, ask_low=j, volume=j)
+                        candle.save()
+
+        # Run the task
+        tasks.create_summary_data()
+
+        # We should have a summary batch
+        batches = models.SummaryBatch.objects.all()
+        self.assertEqual(len(batches), 1)
+        batch = batches[0]
+
+        # We should have 90 summary metric records, 10 symbols * 3 datasources * 3 periods
+        metrics = models.SummaryMetric.objects.filter(summary_batch=batch)
+        self.assertEqual(len(metrics), 90)
+
+        # We should have 30 datasource metrics, 10 symbols * 3 periods
+        ds_metrics = models.SummaryMetricAllDatasources.objects.filter(summary_batch=batch)
+        self.assertEqual(len(ds_metrics), 30)
+
+        # For the 1S candleperiod for a datasource, for the minutes aggregation period we should have 170 or 180 rows
+        # (1000 seconds will span 17 or 18 minutes depending on whether we start at a minute rollover * 10 symbols)
+        dscp = models.DataSourceCandlePeriod.objects.filter(period='1S')[0]
+        aggregations = models.SummaryAggregation.objects.filter(summary_batch=batch, datasource_candleperiod=dscp,
+                                                                aggregation_period='minutes')
+        self.assertTrue(len(aggregations) in [170, 180])
+
+        # For a single symbol we will have 17 or 18
+        dss = models.DataSourceSymbol.objects.all()[0]
+        aggregations = models.SummaryAggregation.objects.filter(summary_batch=batch, datasource_candleperiod=dscp,
+                                                                aggregation_period='minutes', datasource_symbol=dss)
+        self.assertTrue(len(aggregations) in [17, 18])
+
+        # For any of these, except for the first or last, the minute aggregation columns should all be 60 as we
+        # populated a price for every second.
+        self.assertEquals(aggregations[1].num_candles, 60)
 
