@@ -1,7 +1,5 @@
 """
-A collection of utilities for Django.
-TODO Create separate projects for collections of similar utils. Open source (MIT) and uploaded to PyPi. Consider
-    whether this can be added to django-extensions
+A collection of utilities for use across apps
 """
 import functools
 import logging
@@ -15,7 +13,7 @@ from django.db import connection
 
 
 # TARGET PROJECT THEME: Caching
-# TODO Before this is open sourced, we need to enable support for static methods.
+# TODO Enable support for static methods.
 class _Cache(object):
     """
     Decorator to retrieve dataframe output of decorated function from Django cache if it exists. If it doesn't it will

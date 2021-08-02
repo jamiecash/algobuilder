@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/3.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$c)z97qi_)6jwi&7(woo&z!9=ej+&#=1*&v+2b-69dlyc5)du='
+SECRET_KEY = 'secretkey'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -71,7 +71,7 @@ CACHES = {
 }
 
 CELERY_RESULT_BACKEND = 'django-db'
-CELERY_BROKER_URL = 'amqp://[my_messageserver_username]:[my_messageserver_password]@localhost:5672/algobuilder'
+CELERY_BROKER_URL = 'amqp://user:password@localhost:5672/algobuilder'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 INTERNAL_IPS = [
@@ -104,10 +104,10 @@ WSGI_APPLICATION = 'algobuilder.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'algobuilder',
-        'USER': 'my_db_password',
-        'PASSWORD': 'my_db_password',
-        'HOST': '[my_db_ipaddress]',
+        'NAME': 'algotrader',
+        'USER': 'user',
+        'PASSWORD': 'password',
+        'HOST': 'localhost',
         'PORT': '5432',
     },
 }
@@ -159,12 +159,14 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Background tasks
-MAX_ATTEMPTS = 25
-MAX_RUN_TIME = 3600
-BACKGROUND_TASK_RUN_ASYNC = True
+# AlgoBuilder Settings
+# The maximum number of plots to show on the data quality dashboard. Also used to determine amount of data saved in
+# summary aggregation
+ALGOBUILDER_PRICEDATA_MAXPLOTS = 100
 
 # Configure login from log-config.yaml
 with open('log-config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
     LOGGING = config
+
+from .settings_local import *

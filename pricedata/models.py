@@ -3,9 +3,9 @@ import json
 import logging
 
 from django.utils import timezone
-from django_celery_beat.models import PeriodicTask, IntervalSchedule
+from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
 from django.db import models
-from django.db.models.signals import post_delete
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 
@@ -47,6 +47,17 @@ class DataSource(models.Model):
     # Active.
     active = models.BooleanField(default=True)
 
+    # The periodic task to refresh symbols
+    task = models.OneToOneField(PeriodicTask, on_delete=models.CASCADE,  null=True, blank=True)
+
+    @property
+    def task_name(self):
+        """
+        Returns the task name for retrieving symbols for this datasource
+        :return:
+        """
+        return f'Updating symbols for {self.name}'
+
     def get_connection_param(self, param_name: str):
         """
         Returns the value of the specified connection param
@@ -62,25 +73,38 @@ class DataSource(models.Model):
 
         return param_dict[param_name]
 
-    def save(self, *args, **kwargs):
+    def setup_task(self):
         """
-        Override save to update symbols from datasource every day
+        Sets up the periodic task to refresh symbols. Also run it now.
+        :return:
+        """
+        from pricedata import tasks  # Import here due to circular dependency.
+
+        # Create the crontab schedule if it doesn't already exist
+        schedule, created = CrontabSchedule.objects.get_or_create(hour=23, minute=0)
+
+        # Schedule
+        self.task = PeriodicTask.objects.create(
+            name=self.task_name,
+            task='retrieve_symbols',
+            crontab=schedule,
+            args=json.dumps([self.id])
+        )
+        self.save()
+
+        # Run now
+        tasks.retrieve_symbols.delay(datasource_id=self.id)
+
+    def delete(self, *args, **kwargs):
+        """
+        Override delete to delete the symbol refresh scheduled task when we delete the datasource
         :param args:
         :param kwargs:
         :return:
         """
-        super().save(*args, **kwargs)
-
-        # Schedule to run every day. We will use get or create to ensure we don't duplicate schedules
-        # or tasks.
-        schedule, created = IntervalSchedule.objects.get_or_create(every=1, period=IntervalSchedule.DAYS)
-
-        # Don't reschedule of we already have this task set up
-        task_name = f'Updating symbols for {self.name}'
-        tasks = PeriodicTask.objects.filter(name=task_name)
-        if len(tasks) == 0:
-            PeriodicTask.objects.create(interval=schedule, name=task_name, task='pricedata.tasks.retrieve_symbols',
-                                        start_time=timezone.now(), kwargs=json.dumps({'datasource_id': self.id}))
+        if self.task is not None:
+            self.task.delete()
+        return super(self.__class__, self).delete(*args, **kwargs)
 
     def __repr__(self):
         return f"DataSource(name={self.name}, pluginclass={self.pluginclass}, " \
@@ -141,15 +165,22 @@ class DataSourceCandlePeriod(models.Model):
     # Whether data collection is active
     active = models.BooleanField(default=False)
 
-    def save(self, *args, **kwargs):
+    # The periodic task to refresh prices
+    task = models.OneToOneField(PeriodicTask, on_delete=models.CASCADE, null=True, blank=True)
+
+    @property
+    def task_name(self):
         """
-        Override save start the retriever if active.
-        :param args:
-        :param kwargs:
+        Returns the task name for retrieving prices for this datasource candle period
         :return:
         """
-        super().save(*args, **kwargs)
+        return f'Updating {self.period} prices for {self.datasource.name}'
 
+    def setup_task(self):
+        """
+        Sets up the periodic task to refresh prices. Also run it now.
+        :return:
+        """
         # Task repeat will be set depending on the candle period, so that we do not check for new candles more
         # often than necessary. For periods < 10S, we will check every 10S. For others, we will align the
         # repeat with the period.
@@ -163,17 +194,29 @@ class DataSourceCandlePeriod(models.Model):
                                  '1D': (1, IntervalSchedule.DAYS), '1W': (7, IntervalSchedule.DAYS),
                                  '1MO': (30, IntervalSchedule.DAYS)}
 
-        # Get or create schedule.
+        # Create the task schedule if it doesn't already exist
         repeat = candle_period_repeats[self.period]
         schedule, created = IntervalSchedule.objects.get_or_create(every=repeat[0], period=repeat[1])
 
-        # Don't reschedule of we already have this task set up
-        task_name = f"Retrieving prices for DataSourceCandlePeriod id {self.id}."
-        tasks = PeriodicTask.objects.filter(name=task_name)
-        if len(tasks) == 0:
-            PeriodicTask.objects.create(interval=schedule, name=task_name, task='pricedata.tasks.retrieve_prices',
-                                        start_time=timezone.now(),
-                                        kwargs=json.dumps({'datasource_candleperiod_id': self.id}))
+        # Schedule
+        self.task = PeriodicTask.objects.create(
+            name=self.task_name,
+            task='retrieve_prices',
+            interval=schedule,
+            args=json.dumps([self.id])
+        )
+        self.save()
+
+    def delete(self, *args, **kwargs):
+        """
+        Override delete to delete the price refresh scheduled task when we delete the datasourcecandleperiod
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        if self.task is not None:
+            self.task.delete()
+        return super(self.__class__, self).delete(*args, **kwargs)
 
     def __repr__(self):
         return f"DataSourceCandlePeriod(datasource={self.datasource}, period={self.period}, " \
@@ -349,9 +392,22 @@ class SummaryAggregation(models.Model):
                            'aggregation_period')
 
 
-# Receiver to delete task when DataSourceCandlePeriod is deleted
-@receiver(post_delete, sender=DataSourceCandlePeriod)
-def delete_datasourcecandleperiod_receiver(sender, instance, using, **kwargs):
-    task_name = f"Retrieving prices for DataSourceCandlePeriod id {instance.id}."
-    task = PeriodicTask.objects.filter(name=task_name)[0]
-    task.delete()
+@receiver(post_save, sender=DataSource)
+def save_datasource_receiver(sender, instance, created, **kwargs):
+    if created:
+        instance.setup_task()
+    else:
+        if instance.task is not None:
+            instance.task.enabled = instance.active
+            instance.task.save()
+
+
+@receiver(post_save, sender=DataSourceCandlePeriod)
+def save_datasourcecandleperiod_receiver(sender, instance, created, **kwargs):
+    if created:
+        instance.setup_task()
+    else:
+        if instance.task is not None:
+            instance.task.enabled = instance.active
+            instance.task.save()
+

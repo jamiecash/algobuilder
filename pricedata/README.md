@@ -39,31 +39,30 @@ python manage.py runserver
    * Provide a name for your datasource.
    * Select the DataSourceImplementation class that you loaded in step 3.
    * Provide any parameters required by your datasource class as a string representation of a dict. (e.g., the MetaTrader example above requires a market_watch_only parameter which can be input as {'market_watch_only': False}).
-   * Add the candle periods that you would like to retrieve for your datasource. AlgoBuilder can be configured to retrieve price candle data for multiple periods at the same time. The 'start from' setting will be the first candle retrieved for the period when the candle data is retrieved from the datasource for the first time. Set the 'active' flag to enable retrieval of price data for period.
-   * Click save.
-   * Run the task repeater to push repeating requests to retrieve price data.
-   ```shell
-   celery -A algobuilder beat -l INFO
-   ```
-   * Run the task processor that you run to install your datasource plugin if it is not already running.
-   ```shell
-   celery -A algobuilder worker -l INFO --pool=solo
-   ```
-   
+   * Run the periodic task scheduler to create your daily task to refresh your datasources symbols.
+
+```shell
+  celery -A algobuilder beat -l INFO
+```
+
+  * Run the task processor that you run to install your datasource plugin if it is not already running.
+
+```shell
+  celery -A algobuilder worker -l INFO --pool=solo
+```
+
+  * Once the worker task has completed, your application will be populated with all symbols from your datasource. These will be refreshed daily. Note: A symbol exists only once across all data sources, i.e., multiple datasources can share the same symbol.
+  * Your data source implementation should have correctly populated the instrument type, however if not, this can be changed in the 'symbol' admin page. http://localhost:8000/admin/pricedata/symbol/
+  * Select whether price data will be retrieved for each symbol for your newly configured datasource from the 'datasourcesymbol' admin page. http://localhost:8000/admin/pricedata/datasourcesymbol/ . Price data can be retrieved for each symbol from any number of data sources. Use the filters and search available symbols in the admin page to quickly find and select symbols by their name or instrument type. You can set and unset the retrieve price data flag for all selected symbols using the actions box at the top of the page.
+
+6) Select which candle periods will be configured for your datasource in the datasource admin page. AlgoBuilder can be configured to retrieve price candle data for multiple periods at the same time. The 'start from' setting will be the first candle retrieved for the period when the candle data is retrieved from the datasource for the first time. Set the 'active' flag to enable retrieval of price data for period.
+  * Your periodic task scheduler will create tasks to retrieve price data for your data source for all selected candle periods.
+  * Your task processor will process the tasks to retrieve price data from your datasource and save to the AlgoBuilder database.
    
 A screenshot for our above example has been provided below.
      
 ![Add datasource screenshot](README/images/screenshot_add_datasource.png)
     
-Your datasource will now be configured. All symbols from your datasource will be available in AlgoBuilder and AlgoBuilder will start retrieving price data for all symbols.
-
-## Selecting symbols to retrieve
-Once your datasources have been configured, all symbols for all datasources will be available in your application. A symbol exists only once across all data sources, i.e., multiple datasources can share the same symbol. You can edit your symbols to change their instrument type and set whether price data will be retrieved from a data source for that symbol.
-
-Your data source implementation should have correctly populated the instrument type, however if not, this can be changed in the 'symbol' admin page. http://localhost:8000/admin/pricedata/symbol/
-
-You can select whether price data will be retrieved for each symbol for each data source from the 'datasourcesymbol' admin page. http://localhost:8000/admin/pricedata/datasourcesymbol/ . Price data can be retrieved for each symbol from any number of data sources. Use the filters and search available symbols in the admin page to quickly find and select symbols by their name or instrument type. You can set and unset the retrieve price data flag for all selected symbols using the actions box at the top of the page.
-
 ## Checking data quality
 Once the AlgoBuilder processor has been running for a few days, you should have built up a good set of price data to start building your features from. You can assess the quality of your price data using the AlgoBuilder price data quality chart. Navigate to http://localhost:8000/pricedata/quality/ and select the time periods, data sources, candle periods that you want to check for. You can use the aggregation period to aggregate your price data for testing across longer date ranges. This can take a while to run depending on the amount of data to be assessed. Once complete, you will be presented with a heatmap showing the number of candles retrieved for each symbol across each aggregated period. An example has been provided below.
 

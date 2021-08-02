@@ -44,9 +44,10 @@ class DataSourceTests(TestCase):
         ds = models.DataSource(connection_params=connection_params)
         self.assertRaises(SyntaxError, ds.get_connection_param, ['str_param'])
 
-    def test_save(self):
+    def test_save_and_delete(self):
         """
-        When a datasource is saved, it should schedule a task to retrieve symbols
+        When a datasource is saved, it should schedule a task to retrieve symbols. When it is deleted, its task should
+        also be deleted.
         :return:
         """
 
@@ -55,12 +56,20 @@ class DataSourceTests(TestCase):
         ds.save()
 
         # Test that a task was created to configure this datasource
-        task_name = f'Updating symbols for {ds.name}'
+        task_name = ds.task_name
 
         # Check that task exists
         task_list = PeriodicTask.objects.filter(name=task_name)
         self.assertIsNotNone(task_list)
         self.assertGreater(len(task_list), 0)
+
+        # Delete the datasource
+        ds.delete()
+
+        # Check that the task no longer exists
+        task_list = PeriodicTask.objects.filter(name=task_name)
+        self.assertIsNotNone(task_list)
+        self.assertEqual(len(task_list), 0)
 
 
 class DataSourceCandlePeriodTests(TestCase):
@@ -86,14 +95,14 @@ class DataSourceCandlePeriodTests(TestCase):
         dscp.save()
 
         # Task name to check
-        task_name = f"Retrieving prices for DataSourceCandlePeriod id {dscp.id}."
+        task_name = dscp.task_name
 
         # Check that task exists
         task_list = PeriodicTask.objects.filter(name=task_name)
         self.assertIsNotNone(task_list)
         self.assertGreater(len(task_list), 0)
 
-        # Delete the task
+        # Delete the datasource candleperiod. This should delete the task
         dscp.delete()
 
         # Check that task no longer exists
