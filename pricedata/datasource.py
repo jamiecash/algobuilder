@@ -119,11 +119,12 @@ class DataSourceImplementation:
         return all_datasource_implementations
 
     @abc.abstractmethod
-    def get_symbols(self) -> List[Dict[str, str]]:
+    def get_symbols(self) -> List[Dict[str, any]]:
         """
         Get symbols from datasource
 
-        :return: list of dictionaries containing symbol_name and instrument_type
+        :return: list of dictionaries containing symbol_name and instrument_type at a minimum. Dict can also include any
+        other broker specific symbol information required by the implemented datasource.
         """
         raise NotImplementedError
 

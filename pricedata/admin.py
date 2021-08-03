@@ -21,6 +21,7 @@ class DataSourceCandlePeriodAdmin(admin.ModelAdmin):
 # CandlePeriods will be administered on datasource admin page
 class CandlePeriods(admin.TabularInline):
     model = models.DataSourceCandlePeriod
+    fields = ("datasource", "period", "start_from", "active")
     extra = 0
 
 

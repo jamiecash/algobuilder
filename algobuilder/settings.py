@@ -165,7 +165,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 ALGOBUILDER_PRICEDATA_MAXPLOTS = 100
 
 # Configure login from log-config.yaml
-with open('log-config.yaml', 'r') as f:
+with open(f'{BASE_DIR}/log-config.yaml', 'r') as f:
     config = yaml.safe_load(f.read())
     LOGGING = config
 

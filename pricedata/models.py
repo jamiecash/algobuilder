@@ -141,6 +141,9 @@ class DataSourceSymbol(models.Model):
     # Flag to determine whether price data will be retrieved for this datasource / symbol combination
     retrieve_price_data = models.BooleanField(default=True)
 
+    # Any broker specific data required for the symbol. Stored as json text.
+    symbol_info = models.CharField(max_length=1000)
+
     def __repr__(self):
         return f"DataSourceSymbol(datasource={self.datasource}, symbol={self.symbol}, " \
                f"retrieve_price_data={self.retrieve_price_data})"

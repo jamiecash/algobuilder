@@ -1,3 +1,4 @@
+import json
 import logging
 import pandas as pd
 from datetime import timedelta
@@ -98,9 +99,7 @@ def retrieve_symbols(datasource_id):
         # Get symbols from instance
         ds_symbols = instance.get_symbols()
 
-        # Update the database. We will update in bulk due to potential volume of symbols from datasource
-        new_symbols = []
-        new_ds_symbols = []
+        # Update the database.
         for ds_symbol in ds_symbols:
             # Get symbol if it already exists, otherwise create it
             symbols = models.Symbol.objects.filter(name=ds_symbol['symbol_name'])
@@ -109,21 +108,24 @@ def retrieve_symbols(datasource_id):
             else:
                 # Add it.
                 symbol = models.Symbol(name=ds_symbol['symbol_name'], instrument_type=ds_symbol['instrument_type'])
-                new_symbols.append(symbol)
+                symbol.save()
 
-            # Create a DataSourceSymbol if it doesnt already exist
+            # Get the symbol info. It is all fields from ds_symbol except for symbol_name and instrument_type
+            symbol_info = ds_symbol
+            del symbol_info['symbol_name']
+            del symbol_info['instrument_type']
+
+            # Create a DataSourceSymbol if it doesn't already exist. Update it if it does.
             ds_symbols = models.DataSourceSymbol.objects.filter(datasource=ds, symbol=symbol)
 
             if len(ds_symbols) == 0:
-                ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol)
-                new_ds_symbols.append(ds_symbol)
+                ds_symbol = models.DataSourceSymbol(datasource=ds, symbol=symbol, symbol_info=json.dumps(symbol_info))
+            else:
+                ds_symbol = ds_symbols[0]
+                ds_symbol.symbol_info = json.dumps(symbol_info)
 
-        # Bulk create
-        log.debug(f"Bulk creating {len(new_symbols)} symbols and {len(new_ds_symbols)} datasource symbol records for "
-                  f"datasource {datasource}.")
-
-        models.Symbol.objects.bulk_create(new_symbols)
-        models.DataSourceSymbol.objects.bulk_create(new_ds_symbols)
+            # Save it
+            ds_symbol.save()
 
 
 # noinspection PyTypeChecker
