@@ -2,10 +2,9 @@ import ast
 import json
 import logging
 
-from django.utils import timezone
-from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
+from django_celery_beat import models as cm
 from django.db import models
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 
@@ -48,7 +47,7 @@ class DataSource(models.Model):
     active = models.BooleanField(default=True)
 
     # The periodic task to refresh symbols
-    task = models.OneToOneField(PeriodicTask, on_delete=models.CASCADE,  null=True, blank=True)
+    task = models.OneToOneField(cm.PeriodicTask, on_delete=models.CASCADE,  null=True, blank=True)
 
     @property
     def task_name(self):
@@ -81,10 +80,10 @@ class DataSource(models.Model):
         from pricedata import tasks  # Import here due to circular dependency.
 
         # Create the crontab schedule if it doesn't already exist
-        schedule, created = CrontabSchedule.objects.get_or_create(hour=23, minute=0)
+        schedule, created = cm.CrontabSchedule.objects.get_or_create(hour=23, minute=0)
 
         # Schedule
-        self.task = PeriodicTask.objects.create(
+        self.task = cm.PeriodicTask.objects.create(
             name=self.task_name,
             task='retrieve_symbols',
             crontab=schedule,
@@ -169,7 +168,7 @@ class DataSourceCandlePeriod(models.Model):
     active = models.BooleanField(default=False)
 
     # The periodic task to refresh prices
-    task = models.OneToOneField(PeriodicTask, on_delete=models.CASCADE, null=True, blank=True)
+    task = models.OneToOneField(cm.PeriodicTask, on_delete=models.CASCADE, null=True, blank=True)
 
     @property
     def task_name(self):
@@ -187,22 +186,22 @@ class DataSourceCandlePeriod(models.Model):
         # Task repeat will be set depending on the candle period, so that we do not check for new candles more
         # often than necessary. For periods < 10S, we will check every 10S. For others, we will align the
         # repeat with the period.
-        candle_period_repeats = {'1S': (10, IntervalSchedule.SECONDS), '5S': (10, IntervalSchedule.SECONDS),
-                                 '10S': (10, IntervalSchedule.SECONDS), '15S': (15, IntervalSchedule.SECONDS),
-                                 '30S': (30, IntervalSchedule.SECONDS), '1M': (1, IntervalSchedule.MINUTES),
-                                 '5M': (5, IntervalSchedule.MINUTES), '10M': (10, IntervalSchedule.MINUTES),
-                                 '15M': (15, IntervalSchedule.MINUTES), '30M': (30, IntervalSchedule.MINUTES),
-                                 '1H': (1, IntervalSchedule.HOURS), '3H': (3, IntervalSchedule.HOURS),
-                                 '6H': (6, IntervalSchedule.HOURS), '12H': (12, IntervalSchedule.HOURS),
-                                 '1D': (1, IntervalSchedule.DAYS), '1W': (7, IntervalSchedule.DAYS),
-                                 '1MO': (30, IntervalSchedule.DAYS)}
+        candle_period_repeats = {'1S': (10, cm.IntervalSchedule.SECONDS), '5S': (10, cm.IntervalSchedule.SECONDS),
+                                 '10S': (10, cm.IntervalSchedule.SECONDS), '15S': (15, cm.IntervalSchedule.SECONDS),
+                                 '30S': (30, cm.IntervalSchedule.SECONDS), '1M': (1, cm.IntervalSchedule.MINUTES),
+                                 '5M': (5, cm.IntervalSchedule.MINUTES), '10M': (10, cm.IntervalSchedule.MINUTES),
+                                 '15M': (15, cm.IntervalSchedule.MINUTES), '30M': (30, cm.IntervalSchedule.MINUTES),
+                                 '1H': (1, cm.IntervalSchedule.HOURS), '3H': (3, cm.IntervalSchedule.HOURS),
+                                 '6H': (6, cm.IntervalSchedule.HOURS), '12H': (12, cm.IntervalSchedule.HOURS),
+                                 '1D': (1, cm.IntervalSchedule.DAYS), '1W': (7, cm.IntervalSchedule.DAYS),
+                                 '1MO': (30, cm.IntervalSchedule.DAYS)}
 
         # Create the task schedule if it doesn't already exist
         repeat = candle_period_repeats[self.period]
-        schedule, created = IntervalSchedule.objects.get_or_create(every=repeat[0], period=repeat[1])
+        schedule, created = cm.IntervalSchedule.objects.get_or_create(every=repeat[0], period=repeat[1])
 
         # Schedule
-        self.task = PeriodicTask.objects.create(
+        self.task = cm.PeriodicTask.objects.create(
             name=self.task_name,
             task='retrieve_prices',
             interval=schedule,
@@ -413,4 +412,3 @@ def save_datasourcecandleperiod_receiver(sender, instance, created, **kwargs):
         if instance.task is not None:
             instance.task.enabled = instance.active
             instance.task.save()
-
