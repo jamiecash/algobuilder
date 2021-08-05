@@ -120,11 +120,11 @@ class DatabaseUtility:
             batches = [data, ] if not batch_size else np.array_split(data, math.ceil(len(data.index) / batch_size))
             log.debug(f'Bulk INSERT / UPDATE to {table}. Rowcount: {len(data.index)}.')
             if batch_size is not None:
-                log.info(f'Update split into {len(batches)} batches of maximum {batch_size} updates.')  # TODO DEBUG
+                log.debug(f'Update split into {len(batches)} batches of maximum {batch_size} updates.')  # TODO DEBUG
 
             for i in range(0, len(batches)):
                 batch = batches[i]
-                log.info(f'Bulk INSERT / UPDATE to {table}. Batch {i + 1} of {len(batches)}.')
+                log.debug(f'Bulk INSERT / UPDATE to {table}. Batch {i + 1} of {len(batches)}.')
 
                 if unique_fields is None:
                     # Insert
@@ -151,7 +151,7 @@ class DatabaseUtility:
         sql = f"INSERT INTO {table} ({','.join(list(data.columns))}) VALUES {','.join(sqlvals)}"
 
         # Execute
-        log.info(f"INSERTING {len(data.index)} rows to {table}.")
+        log.debug(f"INSERTING {len(data.index)} rows to {table}.")
         connection.cursor().execute(sql)
 
     @staticmethod
@@ -180,7 +180,7 @@ class DatabaseUtility:
               f"ON CONFLICT ({','.join(list(unique_fields))}) DO UPDATE SET {','.join(on_duplicates)}"
 
         # Execute
-        log.info(f"UPSERTING {len(data.index)} rows to {table}.")
+        log.debug(f"UPSERTING {len(data.index)} rows to {table}.")
         connection.cursor().execute(sql)
 
     @staticmethod

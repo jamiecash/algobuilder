@@ -69,19 +69,19 @@ class DataSourceImplementation:
 
     # The model class containing the properties for the data source. Protected to enable implementations of this class
     # only to access.
-    _data_source_model = None
+    _datasource = None
 
     # The get_prices implementation should return a pandas dataframe with the following columns
     _prices_columns = ['time', 'period', 'bid_open', 'bid_high', 'bid_low', 'bid_close', 'ask_open', 'ask_high',
                        'ask_low', 'ask_close', 'volume']
 
-    def __init__(self, data_source_model: models.DataSource) -> None:
+    def __init__(self, datasource: models.DataSource) -> None:
         """
         Construct the datasource implementation and stores its model
-        :param data_source_model: The DataSource model instance containing the details required to create and connect to
+        :param datasource: The DataSource model instance containing the details required to create and connect to
         this datasource.
         """
-        self._data_source_model = data_source_model
+        self._datasource = datasource
 
     @staticmethod
     def instance(name: str):

@@ -2,9 +2,10 @@ import json
 import logging
 from collections import Counter
 from datetime import timedelta
-from typing import Dict
+from typing import Dict, List
 
 from bokeh.embed import json_item
+from bokeh.layouts import gridplot
 from bokeh.models import (BasicTicker, ColorBar, ColumnDataSource,
                           LinearColorMapper, BasicTickFormatter, BoxSelectTool, CustomJS, HoverTool,
                           DatetimeTickFormatter, CDSView, BooleanFilter, )
@@ -379,7 +380,7 @@ class QualityView(View):
 
 class CandlesView(View):
     """
-    OHLC Candle chart
+    OHLC Candle / bar chart
     """
 
     # Logger
@@ -424,7 +425,9 @@ class CandlesView(View):
                                                            'ask_low', 'ask_close', 'volume')))
 
             # Get the chart
-            chart = self.__create_chart(candle_data)
+            bid_ask = form_data['bid_ask']
+            chart_type = form_data['chart_type']
+            chart = self.__create_chart(candle_data, bid_or_ask=bid_ask, chart_type=chart_type)
 
             return render(self.request, self.template_name,
                           {'form': self.form_class(initial=form_data),
@@ -435,18 +438,20 @@ class CandlesView(View):
             return HttpResponse("Invalid form", status=404)
 
     @staticmethod
-    def __create_chart(candle_data: pd.DataFrame, bid_or_ask: str = 'ask') -> str:
+    def __create_chart(candle_data: pd.DataFrame, bid_or_ask: str = 'ask', chart_type: str = 'candle') -> str:
         """
-        Creates the OHLC price data candle chart from the supplied candle data
+        Creates the OHLC price data candle or bar chart and volume vbar chart from the supplied candle data
         :param candle_data: The candle data containing the OHLC data for the chart
         :param bid_or_ask: Whether to use bid or ask prices. Default is ask
+        :param chart_type: candle or bar. Whether to produce a OHLC candle or bar chart
 
-        :return: chart JSON HTML.
+        :return: HTML for gri d of 2 charts. One for the candle or bar chart and one for the volume chart
         """
-        chart_html = {}
 
-        # Convert time to str
-        # candle_data['time'] = candle_data['time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        # Logger
+        log = logging.getLogger(__name__)
+
+        chart_html = ""
 
         # Only create chart if we have some data
         if candle_data is not None and len(candle_data.index) > 0:
@@ -460,10 +465,11 @@ class CandlesView(View):
             candle_data['low'] = candle_data[f'{bid_or_ask}_low']
             candle_data['close'] = candle_data[f'{bid_or_ask}_close']
 
-            # Generate candle chart.
+            # We will have a grid of 2 plots sharing the same source
+            plots = []
             source = ColumnDataSource(candle_data)
-            CandlesView.__log.debug(f"Producing JSON data for candle chart for symbol {symbol} using source data: "
-                                    f"{source.data}")
+            CandlesView.__log.debug(f"Producing JSON data for {chart_type} chart for symbol {symbol} using source "
+                                    f"data: {source.data}")
 
             # Date formatter. Used on axis
             dtfmt = DatetimeTickFormatter(days='%Y-%m-%d', hours='%Y-%m-%d %H:%M', hourmin='%Y-%m-%d %H:%M',
@@ -486,40 +492,78 @@ class CandlesView(View):
                 mode='mouse'
             )
 
-            p = figure(plot_width=1000, x_axis_type="datetime", toolbar_location='below', tools=[hover],
-                       x_axis_location="above", )
+            # First figure is the candle or bar chart, 2nd is for the volume bar chart. Dates will be plotted above
+            # first. Toolbar will be below second.
+            p1 = figure(plot_width=1000, x_axis_type="datetime", tools=[hover], x_axis_location="above")
+            p2 = figure(plot_width=1000, x_axis_type="datetime", tools=[hover], plot_height=round(p1.plot_height / 3),
+                        x_range=p1.x_range)
+            p2.axis[0].visible = False
+            plots = [p1, p2]
 
-            # Format date
-            p.xaxis[0].formatter = dtfmt
-
-            # Candle wick, high to low
-            p.segment(source=source, x0='time', y0='high', x1='time', y1='low', color="black")
-
-            # Width will be the number of milliseconds between the times - 10% for spacing
-            width = (candle_data['time'][1] - candle_data['time'][0]).total_seconds() * 1000 * .9
-
-            # Candle colour will depend on whether it has increased or decreased between open and close
+            # Candle (for candle chart) or wick (for bar chart) colour will depend on whether it has increased or
+            # decreased between open and close
             inc = CDSView(source=source, filters=[BooleanFilter(source.data['close'] > source.data['open'])])
             dec = CDSView(source=source, filters=[BooleanFilter(source.data['open'] > source.data['close'])])
+            views = {inc: '#555555', dec: '#F2583E'}  # Colours for inc and dec views
 
-            p.vbar(source=source, view=inc, x='time', top='open', bottom='close', width=width, fill_color="#D5E1DD",
-                   line_color="black")
-            p.vbar(source=source, view=dec, x='time', top='open', bottom='close', width=width, fill_color="#F2583E",
-                   line_color="black")
+            # Draw candle with wick, or line with high and low markers depending on whether we are drawing candles or
+            # bars.
+            width = 0  # This will be calculated depending on chart type
+            if chart_type == 'candle':
+                # Candle body width will be the number of milliseconds between the times - 20% for
+                # spacing.
+                width = (candle_data['time'][1] - candle_data['time'][0]).total_seconds() * 1000 * .8
 
-            p.axis.axis_line_color = None
-            p.axis.major_tick_line_color = None
-            p.axis.major_label_text_font_size = "7px"
-            p.axis.major_label_standoff = 0
-            p.xaxis.major_label_orientation = 1.0
-            p.grid.grid_line_alpha = 0.3
+                # Candle wick
+                plots[0].segment(source=source, x0='time', y0='high', x1='time', y1='low', color="black")
 
-            json_txt = json.dumps(json_item(p))
+                # The candle body. Colour will depend on open / close prices and will use inc and dec views declared
+                # above.
+                for view in views:
+                    plots[0].vbar(source=source, view=view, x='time', top='open', bottom='close', width=width,
+                                  fill_color=views[view], line_color="black")
 
-            CandlesView.__log.debug(f"Produced JSON text for {symbol} graph: {json_txt}")
+            elif chart_type == 'bar':
+                # Open / close tick length will be the number of milliseconds between the times - 70% for spacing.
+                width = (candle_data['time'][1] - candle_data['time'][0]).total_seconds() * 1000 * .3
 
-            # Add the json html
+                # Bar. Colour will depend on whether this opened higher than closed (red) or closed higher than opened
+                # (black). They will use inc / dec views declared earlier.
+                for view in views:
+                    # The main bar
+                    plots[0].segment(source=source, view=view, x0='time', y0='high', x1='time', y1='low',
+                                     color=views[view])
+
+                    # Open line on left and close on right
+                    plots[0].ray(source=source, view=view, x='time', y='open', length=width, angle=180,
+                                 color=views[view], angle_units="deg")
+                    plots[0].ray(source=source, view=view, x='time', y='close', length=width, angle=0,
+                                 color=views[view], angle_units="deg")
+            else:
+                log.warning(f"Invalid chart type of {chart_type} requested.")
+
+            # Show volume as bars. We will use the width calculated for the candle or bar charts above to align.
+            # Height should be a 1/3 of the height of the main plot.
+            plots[1].vbar(source=source, x='time', top='volume', width=width)
+
+            # Axis format for both plots
+            for p in plots:
+                # Format plot
+                p.axis.axis_line_color = None
+                p.axis.major_tick_line_color = None
+                p.axis.major_label_text_font_size = "7px"
+                p.axis.major_label_standoff = 0
+                p.xaxis.major_label_orientation = 1.0
+                p.grid.grid_line_alpha = 0.3
+
+                p.xaxis[0].formatter = dtfmt
+
+            # Create the grid and HTML
+            grid = gridplot(plots, ncols=1, toolbar_location='below', toolbar_options=dict(logo=None))
+            json_txt = json.dumps(json_item(grid))
             chart_html = json_txt
+
+            CandlesView.__log.debug(f"Produced HTML for {symbol} graph: {chart_html}")
 
         return chart_html
 

@@ -78,3 +78,13 @@ class PriceDataCandleForm(forms.Form):
         forms.ChoiceField(widget=forms.Select(attrs={'class': 'form-control'}), required=True,
                           choices=[(symbol, symbol) for symbol in symbols],
                           label="Symbol")
+
+    # Bid or ask
+    bid_ask = forms.ChoiceField(widget=forms.Select(attrs={'class': 'form-control'}), required=True,
+                                choices=[('bid', 'Bid'), ('ask', 'Ask')],
+                                label="Price Type")
+
+    # Candles or bars
+    chart_type = forms.ChoiceField(widget=forms.Select(attrs={'class': 'form-control'}), required=True,
+                                   choices=[('candle', 'OHLC Candle'),  ('bar', 'OHLC Bar')],
+                                   label="Chart Type")
