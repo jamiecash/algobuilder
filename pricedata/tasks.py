@@ -12,7 +12,7 @@ from pricedata import datasource
 from algobuilder.utils import DatabaseUtility
 
 
-@shared_task(name='retrieve_prices')
+@shared_task(name='retrieve_prices', queue='pricedata')
 def retrieve_prices(datasource_candleperiod_id: int):
     """
     Retrieves prices for datasource candle period from datasource and populates in application database
@@ -76,7 +76,7 @@ def retrieve_prices(datasource_candleperiod_id: int):
         log.debug(f"Task running for DataSourceCandlePeriod {ds_pc}.")
 
 
-@shared_task(name='retrieve_symbols')
+@shared_task(name='retrieve_symbols', queue='pricedata')
 def retrieve_symbols(datasource_id):
     """
     Retrieves symbols for datasource and populates in application database

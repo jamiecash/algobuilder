@@ -3,6 +3,7 @@ import json
 import logging
 
 from django_celery_beat import models as cm
+from django.conf import settings
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -79,8 +80,14 @@ class DataSource(models.Model):
         """
         from pricedata import tasks  # Import here due to circular dependency.
 
+        # Get the schedule from settings
+        cron = json.loads(settings.ALGOBUILDER_PRICEDATA_SYMBOL_REFRESH_CRON)
+
         # Create the crontab schedule if it doesn't already exist
-        schedule, created = cm.CrontabSchedule.objects.get_or_create(hour=23, minute=0)
+        schedule, created = cm.CrontabSchedule.objects.get_or_create(month_of_year=cron['month_of_year'],
+                                                                     day_of_month=cron['day_of_month'],
+                                                                     day_of_week=cron['day_of_week'],
+                                                                     hour=cron['hour'], minute=cron['minute'])
 
         # Schedule
         self.task = cm.PeriodicTask.objects.create(
@@ -184,29 +191,52 @@ class DataSourceCandlePeriod(models.Model):
         :return:
         """
         # Task repeat will be set depending on the candle period, so that we do not check for new candles more
-        # often than necessary. For periods < 10S, we will check every 10S. For others, we will align the
+        # often than necessary. For periods < 10S, we will check every 10s. For others, we will align the
         # repeat with the period.
-        candle_period_repeats = {'1S': (10, cm.IntervalSchedule.SECONDS), '5S': (10, cm.IntervalSchedule.SECONDS),
-                                 '10S': (10, cm.IntervalSchedule.SECONDS), '15S': (15, cm.IntervalSchedule.SECONDS),
-                                 '30S': (30, cm.IntervalSchedule.SECONDS), '1M': (1, cm.IntervalSchedule.MINUTES),
-                                 '5M': (5, cm.IntervalSchedule.MINUTES), '10M': (10, cm.IntervalSchedule.MINUTES),
-                                 '15M': (15, cm.IntervalSchedule.MINUTES), '30M': (30, cm.IntervalSchedule.MINUTES),
-                                 '1H': (1, cm.IntervalSchedule.HOURS), '3H': (3, cm.IntervalSchedule.HOURS),
-                                 '6H': (6, cm.IntervalSchedule.HOURS), '12H': (12, cm.IntervalSchedule.HOURS),
-                                 '1D': (1, cm.IntervalSchedule.DAYS), '1W': (7, cm.IntervalSchedule.DAYS),
-                                 '1MO': (30, cm.IntervalSchedule.DAYS)}
+        schedules = {'1S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
+                     '5S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
+                     '10S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
+                     '15S': cm.IntervalSchedule(every=15, period=cm.IntervalSchedule.SECONDS),
+                     '30S': cm.IntervalSchedule(every=30, period=cm.IntervalSchedule.SECONDS),
+                     '1M': cm.CrontabSchedule(minute='*/1'), '5M': cm.CrontabSchedule(minute='*/5'),
+                     '10M': cm.CrontabSchedule(minute='*/10'), '15M': cm.CrontabSchedule(minute='*/15'),
+                     '30M': cm.CrontabSchedule(minute='*/30'), '1H': cm.CrontabSchedule(hour='*/1', minute=0),
+                     '3H': cm.CrontabSchedule(hour='*/3', minute=0), '6H': cm.CrontabSchedule(hour='*/6', minute=0),
+                     '12H': cm.CrontabSchedule(hour='*/12', minute=0), '1D': cm.CrontabSchedule(minute=0, hour=0),
+                     '1W': cm.CrontabSchedule(day_of_week='friday', hour=0, minute=0),
+                     '1MO':  cm.CrontabSchedule(day_of_month=1, hour=0, minute=0)}
 
-        # Create the task schedule if it doesn't already exist
-        repeat = candle_period_repeats[self.period]
-        schedule, created = cm.IntervalSchedule.objects.get_or_create(every=repeat[0], period=repeat[1])
+        # Create it
+        schedule = schedules[self.period]
 
-        # Schedule
-        self.task = cm.PeriodicTask.objects.create(
-            name=self.task_name,
-            task='retrieve_prices',
-            interval=schedule,
-            args=json.dumps([self.id])
-        )
+        # Schedule. We may have an interval schedule or a crontab schedule
+        if isinstance(schedule, cm.IntervalSchedule):
+            # Get or create the schedule
+            schedule, created = cm.IntervalSchedule.objects.get_or_create(every=schedule.every, period=schedule.period)
+            schedule.save()
+
+            # Create the task
+            self.task = cm.PeriodicTask.objects.create(
+                name=self.task_name,
+                task='retrieve_prices',
+                interval=schedule,
+                args=json.dumps([self.id])
+            )
+        elif isinstance(schedule, cm.CrontabSchedule):
+            # Get or create the schedule
+            schedule, created = cm.CrontabSchedule.objects.get_or_create(hour=schedule.hour, minute=schedule.minute,
+                                                                         day_of_week=schedule.day_of_week,
+                                                                         day_of_month=schedule.day_of_month)
+            schedule.save()
+
+            # Create the task
+            self.task = cm.PeriodicTask.objects.create(
+                name=self.task_name,
+                task='retrieve_prices',
+                crontab=schedule,
+                args=json.dumps([self.id])
+            )
+
         self.save()
 
     def delete(self, *args, **kwargs):

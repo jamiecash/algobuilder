@@ -279,7 +279,7 @@ class TasksTest(TestCase):
         dscp = models.DataSourceCandlePeriod.objects.filter(period='1S')[0]
         aggregations = models.SummaryAggregation.objects.filter(summary_batch=batch, datasource_candleperiod=dscp,
                                                                 aggregation_period='minutes')
-        self.assertTrue(len(aggregations) in [170, 180])
+        self.assertTrue(len(aggregations) in [170, 180], f"Len is {len(aggregations)}. It should be 170 or 180.")
 
         # For a single symbol we will have 17 or 18
         dss = models.DataSourceSymbol.objects.all()[0]

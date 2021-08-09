@@ -15,6 +15,8 @@ import logging.config
 import yaml
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
+from kombu import Queue, Exchange
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -73,6 +75,15 @@ CACHES = {
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_BROKER_URL = 'amqp://user:password@localhost:5672/algobuilder'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_DEFAULT_QUEUE = 'default'
+
+# 3 queues, one that interfaces with the pricedata source, one that interfaces with the broker and a default queue for
+# everything else.
+CELERY_QUEUES = (
+    Queue('default', Exchange('default'), routing_key='default'),
+    Queue('pricedata', Exchange('default'), routing_key='pricedata'),
+    Queue('broker', Exchange('default'), routing_key='broker'),
+)
 
 INTERNAL_IPS = [
     '127.0.0.1',
@@ -163,6 +174,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # The maximum number of plots to show on the data quality dashboard. Also used to determine amount of data saved in
 # summary aggregation
 ALGOBUILDER_PRICEDATA_MAXPLOTS = 100
+
+# The cron schedule to run the datasource symbol refresh
+ALGOBUILDER_PRICEDATA_SYMBOL_REFRESH_CRON = '{"month_of_year": "*", "day_of_month": "*", "day_of_week": "mon-fri", ' \
+                                            '"hour": 23, "minute": 0}'
 
 # Configure login from log-config.yaml
 with open(f'{BASE_DIR}/log-config.yaml', 'r') as f:
