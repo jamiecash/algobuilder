@@ -38,7 +38,7 @@
 <div id="container">
 
     {% if not is_popup %}
-        <!-- Header -->
+        <!-- Header. Menubar and breadcrumbs -->
         {% include "admin/menubar.html" %}
         {% block nav-global %}{% endblock %}
         {% block breadcrumbs %}
@@ -76,7 +76,10 @@
           <br class="clear">
         </div>
         <!-- END Content -->
-        {% block footer %}<div id="footer"></div>{% endblock %}
+        {% block footer %}
+            <div id="footer" class="row">
+                <div class="col-sm-12 text-center small">(c)2021 AlgoBuilder</div>
+            </div>{% endblock %}
       </div>
     </div>
 </div>

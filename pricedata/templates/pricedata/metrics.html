@@ -8,27 +8,27 @@
     <form method="post">
         {% csrf_token %}
         <ul class="list-group">
-          <li class="list-group-item">
-              <h1 class="h2">Filters</h1>
-              {% if form.errors %}
-                <div class="invalid-feedback">{{ form.errors }}</div>
-              {% endif %}
-          </li>
-          <li class="list-group-item">
-            <div class="form-group">
-                <div class="form-label">{{ form.datasource.label }}</div>
-                <div class="flex-fill">{{ form.datasource }}</div>
-            </div>
-          </li>
-          <li class="list-group-item">
-            <div class="form-group">
-                <div class="form-label">{{ form.candle_period.label }}</div>
-                <div class="flex-fill">{{ form.candle_period }}</div>
-            </div>
-          </li>
-          <li class="list-group-item">
-            <input class="btn btn-primary" type="submit" value="Submit">
-          </li>
+            <li class="list-group-item">
+                <h1 class="h2">Filters</h1>
+                    {% if form.errors %}
+                        <div class="invalid-feedback">{{ form.errors }}</div>
+                    {% endif %}
+            </li>
+            <li class="list-group-item">
+                <div class="form-group">
+                    <div class="form-label">{{ form.datasource.label }}</div>
+                    <div class="flex-fill">{{ form.datasource }}</div>
+                </div>
+            </li>
+            <li class="list-group-item">
+                <div class="form-group">
+                    <div class="form-label">{{ form.candle_period.label }}</div>
+                    <div class="flex-fill">{{ form.candle_period }}</div>
+                </div>
+            </li>
+            <li class="list-group-item">
+                <input class="btn btn-primary" type="submit" value="Submit">
+            </li>
         </ul>
     </form>
 {% endblock sidebar %}
