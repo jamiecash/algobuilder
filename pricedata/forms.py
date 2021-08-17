@@ -1,7 +1,6 @@
 from django import forms
 from django.forms import DateTimeInput
 from pricedata import models
-from pricedata.widgets import BootstrapDateTimePickerInput
 
 
 class PriceDataQualityForm(forms.Form):
@@ -66,10 +65,10 @@ class PriceDataCandleForm(forms.Form):
                                                    for dscp in dscps])
     # From and to dates
     from_date = forms.DateTimeField(label="From date", input_formats=['%d/%m/%Y %H:%M'],
-                                    widget=BootstrapDateTimePickerInput(attrs={'class': 'form-control'}))
+                                    widget=forms.DateTimeInput(attrs={'class': 'form-control'}))
 
     to_date = forms.DateTimeField(label="To date", input_formats=['%d/%m/%Y %H:%M'],
-                                  widget=BootstrapDateTimePickerInput(attrs={'class': 'form-control'}))
+                                  widget=forms.DateTimeInput(attrs={'class': 'form-control'}))
 
     # Symbol.
     # TODO Ajax to get only symbols for the selected datasource and period.Guide here:
