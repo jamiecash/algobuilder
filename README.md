@@ -11,7 +11,7 @@ AlgoBuilder is a distributed application consisting of:
 * Task processors for price data retrieval; feature calculation; and strategy execution.
 * A database to store price data, features and the output from your algo trading strategies.
 
-![AlgoBuilder Architecture](README/images/AlgoBuilder%20Architecture.png)
+![AlgoBuilder Architecture](README/images/AlgoBuilderArchitecture.png)
   
 ## Setup
 1) Set up your python environment.
