@@ -15,8 +15,8 @@ class Plugin(models.Model):
     __log = logging.getLogger(__name__)
 
     # The path to the plugin module and requirements file
-    module_filename = models.FileField(max_length=200, upload_to=r'plugin\plugins')
-    requirements_file = models.FileField(max_length=200, upload_to=r'plugin\requirements')
+    module_filename = models.FileField(max_length=200, upload_to='plugin/plugins')
+    requirements_file = models.FileField(max_length=200, upload_to='plugin/requirements')
 
     # Whether the module us installed
     installed = models.BooleanField(default=False)

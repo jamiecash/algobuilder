@@ -67,7 +67,7 @@ CACHES = {
     },
     'price_data': {
         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-        'LOCATION': 'c:/AlgoBuilderCache',
+        'LOCATION': 'c:/AlgoBuilderCache',  # Change on Linux
         'TIMEOUT': 60*60*5  # 6 hours
     }
 }
