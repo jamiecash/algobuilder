@@ -21,7 +21,7 @@ from django.views.static import serve
 from algobuilder import settings
 
 urlpatterns = [
-    path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
+    path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     path('admin/', admin.site.urls),
     path('plugin/', include('plugin.urls')),
     path('pricedata/', include('pricedata.urls')),
