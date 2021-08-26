@@ -15,13 +15,16 @@ Including another URLconf
 """
 import debug_toolbar
 from django.contrib import admin
+from django.contrib.staticfiles.storage import staticfiles_storage
 from django.urls import path, include, re_path
+from django.views.generic import RedirectView
 from django.views.static import serve
 
 from algobuilder import settings
 
 urlpatterns = [
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
+    path('favicon.ico', RedirectView.as_view(url=staticfiles_storage.url('algobuilder/img/favicon.ico'))),
     path('admin/', admin.site.urls),
     path('plugin/', include('plugin.urls')),
     path('pricedata/', include('pricedata.urls')),
