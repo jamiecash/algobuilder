@@ -1,0 +1,15 @@
+[Unit]
+Description=Daphne webserver service for AlgoBuilder
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/systemd/system/algobuilder.daphne.conf
+User=algobuilder
+Group=algobuilder
+WorkingDirectory=/opt/algobuilder
+ExecStart=/bin/sh -c '${DAPHNE_BIN} --access-log /var/log/daphne/access.log -b 0.0.0.0 -p 8000 algobuilder.asgi:algobuilder
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

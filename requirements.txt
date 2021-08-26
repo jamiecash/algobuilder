@@ -1,5 +1,6 @@
 bokeh~=2.3.3
 celery~=5.1.2
+daphne~=3.0.2
 django~=3.2.5
 django-celery-beat~=2.2.1
 django-celery-results~=2.2.0
