@@ -8,7 +8,7 @@ EnvironmentFile=/etc/systemd/system/algobuilder.daphne.conf
 User=algobuilder
 Group=algobuilder
 WorkingDirectory=/opt/algobuilder
-ExecStart=/bin/sh -c '${DAPHNE_BIN} --access-log /var/log/daphne/access.log -b 0.0.0.0 -p 8000 algobuilder.asgi:algobuilder
+ExecStart=/bin/sh -c '${DAPHNE_BIN} --access-log /var/log/daphne/access.log -b 0.0.0.0 -p 8000 algobuilder.asgi:application'
 Restart=always
 
 [Install]

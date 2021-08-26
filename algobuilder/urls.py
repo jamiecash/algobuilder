@@ -16,8 +16,12 @@ Including another URLconf
 import debug_toolbar
 from django.contrib import admin
 from django.urls import path, include
+from django.views.static import serve
+
+from algobuilder import settings
 
 urlpatterns = [
+    path(r'^static/(?P<path>.*)$', serve,{'document_root': settings.STATIC_ROOT}),
     path('admin/', admin.site.urls),
     path('plugin/', include('plugin.urls')),
     path('pricedata/', include('pricedata.urls')),

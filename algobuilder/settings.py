@@ -75,7 +75,7 @@ CACHES = {
 CELERY_RESULT_BACKEND = 'django-db'
 CELERY_BROKER_URL = 'amqp://user:password@localhost:5672/algobuilder'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
-CELERY_DEFAULT_QUEUE = 'default'
+CELERY_TASK_DEFAULT_QUEUE = 'default'
 
 # 3 queues, one that interfaces with the pricedata source, one that interfaces with the broker and a default queue for
 # everything else.
@@ -164,6 +164,7 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static/"),
 ]
+STATIC_ROOT = 'prod_static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field
