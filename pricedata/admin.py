@@ -1,8 +1,4 @@
 from django.contrib import admin
-from django import forms
-
-# Register your models here.
-from plugin.models import PluginClass
 from . import models
 
 # Override titles etc.

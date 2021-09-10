@@ -25,6 +25,22 @@ aggregation_periods = [
         ('minutes', 'Minutes'), ('hours', 'Hours'), ('days', 'Days'), ('weeks', 'Weeks'), ('months', 'Months')
     ]
 
+# Task repeat will be set depending on the candle period, so that we do not check for new candles more
+# often than necessary. For periods < 10S, we will check every 10s. For others, we will align the
+# repeat with the period.
+schedules = {'1S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
+             '5S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
+             '10S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
+             '15S': cm.IntervalSchedule(every=15, period=cm.IntervalSchedule.SECONDS),
+             '30S': cm.IntervalSchedule(every=30, period=cm.IntervalSchedule.SECONDS),
+             '1M': cm.CrontabSchedule(minute='*/1'), '5M': cm.CrontabSchedule(minute='*/5'),
+             '10M': cm.CrontabSchedule(minute='*/10'), '15M': cm.CrontabSchedule(minute='*/15'),
+             '30M': cm.CrontabSchedule(minute='*/30'), '1H': cm.CrontabSchedule(hour='*/1', minute=0),
+             '3H': cm.CrontabSchedule(hour='*/3', minute=0), '6H': cm.CrontabSchedule(hour='*/6', minute=0),
+             '12H': cm.CrontabSchedule(hour='*/12', minute=0), '1D': cm.CrontabSchedule(minute=0, hour=0),
+             '1W': cm.CrontabSchedule(day_of_week='friday', hour=0, minute=0),
+             '1MO':  cm.CrontabSchedule(day_of_month=1, hour=0, minute=0)}
+
 
 class DataSource(models.Model):
     """
@@ -190,23 +206,8 @@ class DataSourceCandlePeriod(models.Model):
         Sets up the periodic task to refresh prices. Also run it now.
         :return:
         """
-        # Task repeat will be set depending on the candle period, so that we do not check for new candles more
-        # often than necessary. For periods < 10S, we will check every 10s. For others, we will align the
-        # repeat with the period.
-        schedules = {'1S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
-                     '5S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
-                     '10S': cm.IntervalSchedule(every=10, period=cm.IntervalSchedule.SECONDS),
-                     '15S': cm.IntervalSchedule(every=15, period=cm.IntervalSchedule.SECONDS),
-                     '30S': cm.IntervalSchedule(every=30, period=cm.IntervalSchedule.SECONDS),
-                     '1M': cm.CrontabSchedule(minute='*/1'), '5M': cm.CrontabSchedule(minute='*/5'),
-                     '10M': cm.CrontabSchedule(minute='*/10'), '15M': cm.CrontabSchedule(minute='*/15'),
-                     '30M': cm.CrontabSchedule(minute='*/30'), '1H': cm.CrontabSchedule(hour='*/1', minute=0),
-                     '3H': cm.CrontabSchedule(hour='*/3', minute=0), '6H': cm.CrontabSchedule(hour='*/6', minute=0),
-                     '12H': cm.CrontabSchedule(hour='*/12', minute=0), '1D': cm.CrontabSchedule(minute=0, hour=0),
-                     '1W': cm.CrontabSchedule(day_of_week='friday', hour=0, minute=0),
-                     '1MO':  cm.CrontabSchedule(day_of_month=1, hour=0, minute=0)}
 
-        # Create it
+        # Get the schedule from the period
         schedule = schedules[self.period]
 
         # Schedule. We may have an interval schedule or a crontab schedule

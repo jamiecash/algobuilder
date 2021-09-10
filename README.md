@@ -48,4 +48,7 @@ python manage.py runserver
 ```
 
 11) Once AlgoBuilder has been set up, you will need to: retrieve price data; calculate features; and calculate trading recommendations. The instructions for these steps are available below:
+
 [Retrieving price data](pricedata/README.md)
+
+[Calculating features](feature/README.md)

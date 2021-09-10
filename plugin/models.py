@@ -16,7 +16,7 @@ class Plugin(models.Model):
 
     # The path to the plugin module and requirements file
     module_filename = models.FileField(max_length=200, upload_to='plugin/plugins')
-    requirements_file = models.FileField(max_length=200, upload_to='plugin/requirements')
+    requirements_file = models.FileField(max_length=200, upload_to='plugin/requirements', blank=True)
 
     # Whether the module us installed
     installed = models.BooleanField(default=False)
@@ -69,6 +69,7 @@ class PluginClass(models.Model):
     """
     A class available in a model. Has a name and a type. Type can be a:
         DataSourceImplementation;
+        FeatureImplementation;
         TODO: List other supported plugins here.
 
     This will be auto populated when a plugin is setup, and hence not available on the admin.

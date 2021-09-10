@@ -37,6 +37,7 @@ ALLOWED_HOSTS = []
 INSTALLED_APPS = [
     'pricedata.apps.PricedataConfig',
     'plugin.apps.PluginConfig',
+    'feature.apps.FeatureConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
