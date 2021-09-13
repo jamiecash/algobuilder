@@ -186,6 +186,16 @@ class FeatureExecutionResult(models.Model):
     # The result
     result = models.DecimalField(max_digits=12, decimal_places=6)
 
+    class Meta:
+        unique_together = ('feature_execution', 'time',)
+
+    def __repr__(self):
+        return f"FeatureExecutionResult(feature_execution={self.feature_execution}, time={self.time}, " \
+               f"result={self.result}"
+
+    def __str__(self):
+        return f"FeatureExecution: {self.feature_execution} time: {self.time} result: {self.result}."
+
 
 @receiver(post_save, sender=FeatureExecution)
 def save_feature_execution_receiver(sender, instance, created, **kwargs):

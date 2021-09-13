@@ -166,6 +166,18 @@ class DataSourceSymbol(models.Model):
     # Any broker specific data required for the symbol. Stored as json text.
     symbol_info = models.CharField(max_length=1000)
 
+    @property
+    def symbol_info_dict(self):
+        """
+        Returns the symbol info as a dict.
+        :return: A dict of symbol_info. None if symbol info is empty
+        """
+        symbol_info = None
+        if len(self.symbol_info) > 0:
+            symbol_info = json.loads(self.symbol_info)
+
+        return symbol_info
+
     def __repr__(self):
         return f"DataSourceSymbol(datasource={self.datasource}, symbol={self.symbol}, " \
                f"retrieve_price_data={self.retrieve_price_data})"

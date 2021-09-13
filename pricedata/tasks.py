@@ -58,7 +58,9 @@ def retrieve_prices(datasource_candleperiod_id: int):
 
             # Get the data
             try:
-                data = ds_instance.get_prices(symbol, from_date, to_date, ds_pc.period)
+                # Get the prices
+                data = ds_instance.get_prices(symbol, from_date, to_date, ds_pc.period,
+                                              datasource_symbol.symbol_info_dict)
                 log.debug(f"{len(data.index)} {ds_pc.period} candles retrieved from {ds_pc.datasource.name} for "
                           f"{symbol} to {to_date}.")
 

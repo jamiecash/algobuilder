@@ -62,7 +62,7 @@ class FeatureImplementationTests(TestCase):
         Create a datasource, symbol, candles and feature
         :return:
         """
-        # Create a plugin and plugin class. We can use this for both the datasource and feature as it isnt part of what
+        # Create a plugin and plugin class. We can use this for both the datasource and feature as it isn't part of what
         # we are testing
         plugin = plugin_models.Plugin(module_filename='testfilename.py', requirements_file='testfilename.txt')
         plugin.save()
@@ -123,7 +123,7 @@ class FeatureImplementationTests(TestCase):
         # Get the data for the first symbol (we only have 1). As we haven't calculated any features, this should
         # contain all 1000 rows of candle data
         data = ft.FeatureImplementation.get_data(feature_execution_datasource_symbol=
-                                                  self.feature_execution.featureexecutiondatasourcesymbol_set.all()[0])
+                                                 self.feature_execution.featureexecutiondatasourcesymbol_set.all()[0])
         self.assertEqual(len(data.index), 1000)
 
         # Now add a feature calculation result for the 5 minutes (300 rows)
@@ -134,11 +134,14 @@ class FeatureImplementationTests(TestCase):
             fexr = models.FeatureExecutionResult(feature_execution=self.feature_execution, time=time, result=calc)
             fexr.save()
 
-        # Get the data again. This should include the 700 rows that dont have a feature calculation and an additional
-        # 60 rows required for the calculation of the first one. 760 in total.
+        # Get the data again. This should include the 700 rows that don't have a feature calculation and an additional
+        # 60 rows required for the calculation of the first ones. 760 in total.
         data = ft.FeatureImplementation.get_data(feature_execution_datasource_symbol=
                                                  self.feature_execution.featureexecutiondatasourcesymbol_set.all()[0])
         self.assertEqual(len(data.index), 760)
+
+        # The 60 rows used for the calculation of the first candles should already have results attached
+        self.assertEqual(len(data[data['result'].notnull()]), 60)
 
         # Calculate the features for the remaining available data.
         time = datetime(2020, 1, 1, 0, 5, 0, 0, pytz.UTC)

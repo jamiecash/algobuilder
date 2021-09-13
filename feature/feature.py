@@ -3,9 +3,9 @@ import logging
 import pandas as pd
 from django.db import connection
 
-from feature import models
 from datetime import datetime
 from pricedata import models as pd_models
+from feature import models as ft_models
 
 
 class FeatureInstanceNotImplementedError(Exception):
@@ -27,7 +27,7 @@ class FeatureImplementation:
     # only to access.
     _feature = None
 
-    def __init__(self, feature: models.Feature) -> None:
+    def __init__(self, feature: ft_models.Feature) -> None:
         """
         Construct the feature implementation and stores its model
         :param feature: The Feature model instance.
@@ -42,7 +42,7 @@ class FeatureImplementation:
         :return:
         """
 
-        features = models.Feature.objects.filter(name=name)
+        features = ft_models.Feature.objects.filter(name=name)
 
         if len(features) != 0:
             f = features[0]
@@ -61,7 +61,7 @@ class FeatureImplementation:
         Returns a list of all Features
         :return:
         """
-        all_feature_models = models.Feature.objects.all()
+        all_feature_models = ft_models.Feature.objects.all()
 
         all_feature_implementations = []
         for feature_model in all_feature_models:
@@ -70,7 +70,7 @@ class FeatureImplementation:
         return all_feature_implementations
 
     @staticmethod
-    def get_data_from_date(feature_execution: models.FeatureExecution) -> datetime:
+    def get_data_from_date(feature_execution: ft_models.FeatureExecution) -> datetime:
         """
         Gets the from date for required candle data to calculate this features for the supplied feature_execution.
 
@@ -118,10 +118,10 @@ class FeatureImplementation:
 
         # If we have calculated this feature before, get the last calculation time and append to sql query
         last_calc_exists = \
-            models.FeatureExecutionResult.objects.filter(feature_execution=feature_execution).last() is not None
+            ft_models.FeatureExecutionResult.objects.filter(feature_execution=feature_execution).last() is not None
         if last_calc_exists:
             last_calc =\
-                models.FeatureExecutionResult.objects.filter(feature_execution=feature_execution).latest("time")
+                ft_models.FeatureExecutionResult.objects.filter(feature_execution=feature_execution).latest("time")
             last_calc_time = last_calc.time
             sql += f" WHERE times.time > '{last_calc_time}'"
 
@@ -144,7 +144,7 @@ class FeatureImplementation:
         return from_date
 
     @staticmethod
-    def get_data(feature_execution_datasource_symbol: models.FeatureExecutionDataSourceSymbol) -> pd.DataFrame:
+    def get_data(feature_execution_datasource_symbol: ft_models.FeatureExecutionDataSourceSymbol) -> pd.DataFrame:
         """
         Gets the data for the specified feature execution datasource symbol required to calculate the feature.
         :param feature_execution_datasource_symbol:
@@ -155,16 +155,34 @@ class FeatureImplementation:
         # Get the from date
         from_date = FeatureImplementation.get_data_from_date(feature_execution_datasource_symbol.feature_execution)
 
-        df = None
+        dataframe = None
         if from_date is not None:
-            # Get the data. QuerySet to get the candles, then convert to dataframe, sorted by time. Set index to time
-            candles = pd_models.Candle.objects.filter(datasource_symbol=
-                                                      feature_execution_datasource_symbol.datasource_symbol,
-                                                      time__gte=from_date).all()
-            df = pd.DataFrame(list(candles.values())).sort_values(by='time', ascending=True).set_index('time')
+            # Get the data. QuerySet to get the candles and feature results, then convert to dataframe with outer join
+            # on time so that we can identify those already calculated so that we don't update again. Sort and index on
+            # time.
+            candles = pd_models.Candle.\
+                objects.filter(datasource_symbol=feature_execution_datasource_symbol.datasource_symbol,
+                               time__gte=from_date).all()
+
+            results = ft_models.FeatureExecutionResult.objects.\
+                filter(feature_execution=feature_execution_datasource_symbol.feature_execution,
+                       time__gte=from_date).all()
+
+            df_candles = pd.DataFrame(list(candles.values()))
+            df_results = pd.DataFrame(list(results.values()))
+
+            # If we have results, join them otherwise just return the candles with empty results columns
+            if len(df_results.index) > 0 and len(df_candles.index) > 0:
+                df_candles = df_candles.set_index('time')
+                df_results = df_results.set_index('time')
+                dataframe = pd.concat([df_candles, df_results], axis=1, join="outer").sort_index()
+            elif len(df_candles.index) > 0:
+                dataframe = df_candles.set_index('time').sort_index()
+                dataframe['result'] = None
+                dataframe['feature_execution_id'] = None
 
         # Return the dataframe
-        return df
+        return dataframe
 
     @abc.abstractmethod
     def execute(self, feature_execution):

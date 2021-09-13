@@ -129,13 +129,15 @@ class DataSourceImplementation:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_prices(self, symbol: str, from_date: datetime, to_date: datetime, period: str) -> pd.DataFrame:
+    def get_prices(self, symbol: str, from_date: datetime, to_date: datetime, period: str,
+                   symbol_info: Dict[str, any] = None) -> pd.DataFrame:
         """
         Gets OHLC price data for the specified symbol.
         :param symbol: The name of the symbol to get the price data for.
         :param from_date: Date from when to retrieve data
         :param to_date: Date to receive data up to
         :param period: The period for the candes. Possible values are defined in models.candle_periods.
+        :param symbol_info: A dict of any additional info for symbol required by implementation.
 
         :return: Price data for symbol as pandas dataframe containing the following columns:
             ['time', 'period', 'bid_open', 'bid_high', 'bid_low', 'bid_close',
