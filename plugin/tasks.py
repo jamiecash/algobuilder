@@ -7,7 +7,7 @@ import sys
 from celery import shared_task
 
 
-@shared_task
+@shared_task(name='install_plugin')
 def install_plugin(plugin_id: int):
     from plugin import models  # Imported when needed, due to circular dependency
 

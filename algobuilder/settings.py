@@ -66,11 +66,6 @@ CACHES = {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
         'LOCATION': 'default_cache'
     },
-    'price_data': {
-        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-        'LOCATION': 'c:/AlgoBuilderCache',  # Change on Linux
-        'TIMEOUT': 60*60*5  # 6 hours
-    }
 }
 
 CELERY_RESULT_BACKEND = 'django-db'
@@ -84,6 +79,7 @@ CELERY_QUEUES = (
     Queue('default', Exchange('default'), routing_key='default'),
     Queue('pricedata', Exchange('default'), routing_key='pricedata'),
     Queue('broker', Exchange('default'), routing_key='broker'),
+    Queue('feature', Exchange('default'), routing_key='feature'),
 )
 
 INTERNAL_IPS = [

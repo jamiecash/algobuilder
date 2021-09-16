@@ -3,7 +3,7 @@ from celery import shared_task
 from feature import feature
 
 
-@shared_task(name='calculate_feature')
+@shared_task(name='calculate_feature', queue='feature')
 def calculate_feature(feature_execution_id: int):
     """
     Executes the feature calculation for the specified feature execution
