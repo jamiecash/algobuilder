@@ -1,6 +1,7 @@
 import json
 import logging
 
+import pandas as pd
 from django_celery_beat import models as cm
 
 from django.db import models
@@ -19,40 +20,20 @@ class Feature(models.Model):
     __log = logging.getLogger(__name__)
 
     # The feature name
-    name = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=30, unique=True)
 
     # The feature plugin class
     pluginclass = models.ForeignKey('plugin.PluginClass', on_delete=models.CASCADE,
                                     limit_choices_to={'plugin_type': 'FeatureImplementation'})
 
-    # Active.
-    active = models.BooleanField(default=True)
-
-    def __repr__(self):
-        return f"Feature(name={self.name}, pluginclass={self.pluginclass}, active={self.active}"
-
-    def __str__(self):
-        return f"{self.name}"
-
-
-class FeatureExecution(models.Model):
-    """
-    Represents a request to execute a feature calculation for the specified datasource candleperiod. One of these is
-    required for every symbol or symbol set that the feature will run for.
-    """
-    # Logger
-    __log = logging.getLogger(__name__)
-
-    # The feature
-    feature = models.ForeignKey(Feature, on_delete=models.CASCADE)
-
-    # Period for the candle data.
-    candle_period = models.CharField(max_length=3, choices=pd_models.candle_periods)
-
     # Calculation period. How far to look back to calculate (e.g. 30 day moving average will use 30D). A number
-    # followed by any valid pandas timeseries offset alias:
+    # followed by any valid pandas timeseries offset alias.
     # https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#offset-aliases
     calculation_period = models.CharField(max_length=6)
+
+    # Calculation frequency. How often to run the feature calculation. A string representation of a dict with crontab
+    # parameters. e.g. '{"day_of_week": "mon-fri", "hour": 23, "minute": 0}'
+    calculation_frequency = models.CharField(max_length=255)
 
     # Active.
     active = models.BooleanField(default=True)
@@ -61,66 +42,32 @@ class FeatureExecution(models.Model):
     task = models.OneToOneField(cm.PeriodicTask, on_delete=models.CASCADE, null=True, blank=True)
 
     @property
-    def symbols(self):
-        """
-        Returns the list of symbols for this feature execution.
-
-        :return: Symbols
-        """
-        symbols = []
-
-        feature_execution_symbols = self.featureexecutiondatasourcesymbol_set.all()
-        for feature_execution_symbol in feature_execution_symbols:
-            symbols.append(feature_execution_symbol.datasource_symbol.symbol)
-
-        return symbols
-
-    @property
     def task_name(self):
         """
         Returns the task name for executing this feature
         :return:
         """
-        return f'Calculating {self.feature.name} feature execution id {self.id} for {self.candle_period}.'
+        return f'feature.tasks.calculate_feature (id={self.id})'
 
     def setup_task(self):
         """
-        Sets up the periodic task to calculate this feature execution.
+        Sets up the periodic task to calculate this feature.
         :return:
         """
 
-        # Get the schedule from the period
-        schedule = pd_models.schedules[self.candle_period]
+        # Get the schedule from settings
+        cron = json.loads(self.calculation_frequency)
 
-        if isinstance(schedule, cm.IntervalSchedule):
-            # Get or create the schedule
-            schedule, created = cm.IntervalSchedule.objects.get_or_create(every=schedule.every, period=schedule.period)
-            schedule.save()
+        # Create the crontab schedule if it doesn't already exist
+        schedule, created = cm.CrontabSchedule.objects.get_or_create(**cron)
 
-            # Schedule the task
-            self.task = cm.PeriodicTask.objects.create(
-                name=self.task_name,
-                task='calculate_feature',
-                interval=schedule,
-                args=json.dumps([self.id])
+        # Schedule the task
+        self.task = cm.PeriodicTask.objects.create(
+            name=self.task_name,
+            task='calculate_feature',
+            crontab=schedule,
+            args=json.dumps([self.id])
             )
-        elif isinstance(schedule, cm.CrontabSchedule):
-            # Get or create the schedule
-            schedule, created = cm.CrontabSchedule.objects.get_or_create(hour=schedule.hour, minute=schedule.minute,
-                                                                         day_of_week=schedule.day_of_week,
-                                                                         day_of_month=schedule.day_of_month)
-            schedule.save()
-
-            # Schedule the task
-            self.task = cm.PeriodicTask.objects.create(
-                name=self.task_name,
-                task='calculate_feature',
-                crontab=schedule,
-                args=json.dumps([self.id])
-            )
-        else:
-            self.__log.warning(f"Cannot schedule feature. Unsupported schedule. Type={type(schedule)}.")
-            # TODO Add support for solar and clocked schedules
 
         self.save()
 
@@ -136,12 +83,36 @@ class FeatureExecution(models.Model):
         return super(self.__class__, self).delete(*args, **kwargs)
 
     def __repr__(self):
-        return f"FeatureExecution(feature={self.feature}, candle_period={self.candle_period}, " \
-               f"calculation_period={self.calculation_period}, active={self.active}"
+        return f"Feature(name={self.name}, pluginclass={self.pluginclass}, " \
+               f"calculation_frequency={self.calculation_frequency}, calculation_period={self.calculation_period}, " \
+               f"active={self.active}, task={self.task}"
 
     def __str__(self):
-        return f"Feature: {self.feature} candle_period: {self.candle_period} " \
-               f"calculation_period: {self.calculation_period}."
+        return f"{self.name}"
+
+
+class FeatureExecution(models.Model):
+    """
+    Represents a request to execute a feature calculation. One of these is required for every symbol or symbol set that
+    the feature will run for.
+    """
+    # Logger
+    __log = logging.getLogger(__name__)
+
+    # The feature
+    feature = models.ForeignKey(Feature, on_delete=models.CASCADE)
+
+    # The name of this feature execution
+    name = models.CharField(max_length=20, unique=True)
+
+    # Active.
+    active = models.BooleanField(default=True)
+
+    def __repr__(self):
+        return f"FeatureExecution(feature={self.feature}, name={self.name}, active={self.active}"
+
+    def __str__(self):
+        return f"{self.name}"
 
 
 class FeatureExecutionDataSourceSymbol(models.Model):
@@ -160,15 +131,18 @@ class FeatureExecutionDataSourceSymbol(models.Model):
     # The datasource symbol
     datasource_symbol = models.ForeignKey(pd_models.DataSourceSymbol, on_delete=models.CASCADE)
 
+    # Period for the candle data.
+    candle_period = models.CharField(max_length=3, choices=pd_models.candle_periods)
+
     # Active.
     active = models.BooleanField(default=True)
 
     def __repr__(self):
         return f"FeatureExecutionSymbol(feature_execution={self.feature_execution}, " \
-               f"datasource_symbol={self.datasource_symbol}, active={self.active}"
+               f"datasource_symbol={self.datasource_symbol}, candle_period={self.candle_period}, active={self.active}"
 
     def __str__(self):
-        return f"FeatureExecution: {self.feature_execution} Symbol: {self.datasource_symbol}."
+        return f"{self.feature_execution} Symbol: {self.datasource_symbol}."
 
 
 class FeatureExecutionResult(models.Model):
@@ -197,8 +171,8 @@ class FeatureExecutionResult(models.Model):
         return f"FeatureExecution: {self.feature_execution} time: {self.time} result: {self.result}."
 
 
-@receiver(post_save, sender=FeatureExecution)
-def save_feature_execution_receiver(sender, instance, created, **kwargs):
+@receiver(post_save, sender=Feature)
+def save_feature_receiver(sender, instance, created, **kwargs):
     if created:
         instance.setup_task()
     else:

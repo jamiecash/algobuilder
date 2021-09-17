@@ -10,30 +10,29 @@ admin.site.index_title = 'AlgoBuilder administration'
 # Feature.
 @admin.register(models.Feature)
 class FeatureAdmin(admin.ModelAdmin):
-    fields = ("name", "pluginclass", "active")
-    list_display = ("name", "pluginclass", "active")
-    list_editable = ("active",)
+    fields = ("name", "pluginclass", "calculation_period", "calculation_frequency", "active")
+    list_display = ("name", "pluginclass", "calculation_period", "calculation_frequency", "active")
+    list_editable = ("calculation_frequency", "active",)
 
 
-# FeatureExecutionSymbol. Mpt registered as used inline on FeatureExecution
+# FeatureExecutionSymbol. Not registered as used inline on FeatureExecution
 class FeatureExecutionDataSourceSymbol(admin.ModelAdmin):
-    list_display = ("datasource_symbol", "active")
-    list_editable = ("datasource_symbol", "active")
-    list_filter = ("datasource_symbol", "active")
+    list_display = ("datasource_symbol", "candle_period", "active")
+    list_editable = ("datasource_symbol", "candle_period", "active")
+    list_filter = ("datasource_symbol", "candle_period", "active")
 
 
 # Symbols for FeatureExecution will be administered on datasource admin page
 class DatasourceSymbols(admin.TabularInline):
     model = models.FeatureExecutionDataSourceSymbol
-    fields = ("feature_execution", "datasource_symbol", "active")
+    fields = ("feature_execution", "datasource_symbol", "candle_period", "active")
     extra = 0
 
 
 # FeatureExecution. Symbols added inline
 @admin.register(models.FeatureExecution)
 class FeatureExecutionAdmin(admin.ModelAdmin):
-    # TODO Restrict choices for candle_period to those available in datasource_candleperiods
-    fields = ("feature", "candle_period", "calculation_period", "active")
-    list_display = ("feature", "candle_period", "calculation_period", "symbols", "active")
+    fields = ("feature", "name", "active")
+    list_display = ("feature", "name", "active")
 
     inlines = [DatasourceSymbols]

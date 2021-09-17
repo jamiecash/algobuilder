@@ -100,10 +100,7 @@ class DataSource(models.Model):
         cron = json.loads(settings.ALGOBUILDER_PRICEDATA_SYMBOL_REFRESH_CRON)
 
         # Create the crontab schedule if it doesn't already exist
-        schedule, created = cm.CrontabSchedule.objects.get_or_create(month_of_year=cron['month_of_year'],
-                                                                     day_of_month=cron['day_of_month'],
-                                                                     day_of_week=cron['day_of_week'],
-                                                                     hour=cron['hour'], minute=cron['minute'])
+        schedule, created = cm.CrontabSchedule.objects.get_or_create(**cron)
 
         # Schedule
         self.task = cm.PeriodicTask.objects.create(

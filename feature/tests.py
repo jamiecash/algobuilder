@@ -10,7 +10,7 @@ import pytz
 from feature import feature as ft
 
 
-class FeatureExecutionTests(TestCase):
+class FeatureTests(TestCase):
     plugin_class = None
 
     def setUp(self) -> None:
@@ -22,29 +22,25 @@ class FeatureExecutionTests(TestCase):
 
     def test_save_and_delete(self):
         """
-        When a feature execution is saved, it should schedule a periodic task to run it.
+        When a feature is saved, it should schedule a periodic task to run it.
         :return:
         """
 
         # Create and save a feature. This is required for a feature execution
-        feature = models.Feature(name="test_feature", pluginclass=self.plugin_class, active=True)
+        feature = models.Feature(name="test_feature", pluginclass=self.plugin_class, calculation_period='1H',
+                                 calculation_frequency='{"minute": "*"}',  active=True)
         feature.save()
 
-        # Create and save a feature execution
-        feature_execution = models.FeatureExecution(feature=feature, candle_period='1S',
-                                                    calculation_period='1D', active=True)
-        feature_execution.save()
-
         # Task name to check
-        task_name = feature_execution.task_name
+        task_name = feature.task_name
 
         # Check that task exists
         task_list = PeriodicTask.objects.filter(name=task_name)
         self.assertIsNotNone(task_list)
         self.assertGreater(len(task_list), 0)
 
-        # Delete the feature execution. This should delete the task
-        feature_execution.delete()
+        # Delete the feature. This should delete the task
+        feature.delete()
 
         # Check that task no longer exists
         task_list = PeriodicTask.objects.filter(name=task_name)
@@ -88,12 +84,13 @@ class FeatureImplementationTests(TestCase):
             candle.save()
 
         # Create a feature, feature execution and feature execution symbol
-        feature = models.Feature(name="test_feature", pluginclass=self.plugin_class)
+        feature = models.Feature(name="test_feature", pluginclass=self.plugin_class,
+                                 calculation_frequency='{"minute": "*"}', calculation_period='1M')
         feature.save()
-        self.feature_execution = models.FeatureExecution(feature=feature, candle_period='1S', calculation_period='1M')
+        self.feature_execution = models.FeatureExecution(feature=feature, name="test")
         self.feature_execution.save()
         feature_execution_dss = models.FeatureExecutionDataSourceSymbol(feature_execution=self.feature_execution,
-                                                                        datasource_symbol=self.dss)
+                                                                        datasource_symbol=self.dss, candle_period='1S')
         feature_execution_dss.save()
 
     def test_get_data_from_date(self):
@@ -122,8 +119,9 @@ class FeatureImplementationTests(TestCase):
     def test_get_data(self):
         # Get the data for the first symbol (we only have 1). As we haven't calculated any features, this should
         # contain all 1000 rows of candle data
-        data = ft.FeatureImplementation.get_data(feature_execution_datasource_symbol=
-                                                 self.feature_execution.featureexecutiondatasourcesymbol_set.all()[0])
+        data = ft.FeatureImplementation.\
+            get_data(feature_execution_datasource_symbol=self.feature_execution.featureexecutiondatasourcesymbol_set.
+                     all()[0])
         self.assertEqual(len(data.index), 1000)
 
         # Now add a feature calculation result for the 5 minutes (300 rows)
@@ -136,8 +134,9 @@ class FeatureImplementationTests(TestCase):
 
         # Get the data again. This should include the 700 rows that don't have a feature calculation and an additional
         # 60 rows required for the calculation of the first ones. 760 in total.
-        data = ft.FeatureImplementation.get_data(feature_execution_datasource_symbol=
-                                                 self.feature_execution.featureexecutiondatasourcesymbol_set.all()[0])
+        data = ft.FeatureImplementation.\
+            get_data(feature_execution_datasource_symbol=self.feature_execution.featureexecutiondatasourcesymbol_set.
+                     all()[0])
         self.assertEqual(len(data.index), 760)
 
         # The 60 rows used for the calculation of the first candles should already have results attached
@@ -152,9 +151,7 @@ class FeatureImplementationTests(TestCase):
             fexr.save()
 
         # Get the data again, there shouldn't be any as there are no more features left to calculate
-        data = ft.FeatureImplementation.get_data(feature_execution_datasource_symbol=
-                                                 self.feature_execution.featureexecutiondatasourcesymbol_set.all()[0])
+        data = ft.FeatureImplementation.\
+            get_data(feature_execution_datasource_symbol=self.feature_execution.featureexecutiondatasourcesymbol_set.
+                     all()[0])
         self.assertIsNone(data)
-
-
-

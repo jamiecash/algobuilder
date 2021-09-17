@@ -33,7 +33,7 @@ class MovingAverage(ft.FeatureImplementation):
         # average from the data.
         if data is not None:
             # Calculate the moving average
-            data['moving_average'] = data['bid_close'].rolling(feature_execution.calculation_period).mean()
+            data['moving_average'] = data['bid_close'].rolling(feature_execution.feature.calculation_period).mean()
 
             # Remove the rows that already had a result and were only used to calculate the first results.
             data = data[data['result'].isna()]

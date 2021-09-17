@@ -274,12 +274,14 @@ class TasksTest(TestCase):
         ds_metrics = models.SummaryMetricAllDatasources.objects.filter(summary_batch=batch)
         self.assertEqual(len(ds_metrics), 30)
 
-        # For the 1S candleperiod for a datasource, for the minutes aggregation period we should have 170 or 180 rows
-        # (1000 seconds will span 17 or 18 minutes depending on whether we start at a minute rollover * 10 symbols)
+        # For the 1S candleperiod for a datasource, for the minutes aggregation period we should have between 170 and
+        # 180 rows (1000 seconds will span 17 or 18 minutes depending on whether we start at a minute rollover * 10
+        # symbols. Some symbol calculations may cross minute span)
         dscp = models.DataSourceCandlePeriod.objects.filter(period='1S')[0]
         aggregations = models.SummaryAggregation.objects.filter(summary_batch=batch, datasource_candleperiod=dscp,
                                                                 aggregation_period='minutes')
-        self.assertTrue(len(aggregations) in [170, 180], f"Len is {len(aggregations)}. It should be 170 or 180.")
+        self.assertTrue(len(aggregations) in range(170, 181), f"Len is {len(aggregations)}. It should be between 170 "
+                                                              f"and 180.")
 
         # For a single symbol we will have 17 or 18
         dss = models.DataSourceSymbol.objects.all()[0]

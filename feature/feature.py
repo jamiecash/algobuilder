@@ -96,24 +96,26 @@ class FeatureImplementation:
             FROM
                 (
                     SELECT cnd.time as time
-                    FROM pricedata_candle cnd
-                    WHERE cnd.datasource_symbol_id in
+                    FROM pricedata_candle cnd INNER JOIN
                         (
-                            SELECT datasource_symbol_id
-                            FROM feature_featureexecutiondatasourcesymbol feds
-                                INNER JOIN pricedata_datasourcesymbol dss ON feds.datasource_symbol_id = dss.id
-                            WHERE feds.feature_execution_id = %s
-                        )
+                            SELECT 	datasource_symbol_id,
+                                    feds.candle_period
+                            FROM 	feature_featureexecutiondatasourcesymbol feds INNER JOIN
+                                        pricedata_datasourcesymbol dss ON
+                                            feds.datasource_symbol_id = dss.id
+                            WHERE 	feds.feature_execution_id = %s
+                        ) AS ft_dss ON
+                        cnd.datasource_symbol_id = ft_dss.datasource_symbol_id AND
+                        cnd.period = ft_dss.candle_period
                     GROUP BY cnd.time
-                    HAVING count(*) = 
+                    HAVING COUNT(cnd.time) = 
                         (
-                            SELECT count(datasource_symbol_id)
+                            SELECT COUNT(datasource_symbol_id)
                             FROM feature_featureexecutiondatasourcesymbol feds
                                 INNER JOIN pricedata_datasourcesymbol dss ON feds.datasource_symbol_id = dss.id
                             WHERE feds.feature_execution_id = %s
                         )
                 ) as times
-    
             """
 
         # If we have calculated this feature before, get the last calculation time and append to sql query
@@ -138,7 +140,7 @@ class FeatureImplementation:
         # If we don't have a next_calc_time, then from_date will be None
         from_date = None
         if next_calc_time is not None:
-            cp_td = pd.to_timedelta(feature_execution.calculation_period)
+            cp_td = pd.to_timedelta(feature_execution.feature.calculation_period)
             from_date = next_calc_time - cp_td if last_calc_exists else next_calc_time
 
         return from_date

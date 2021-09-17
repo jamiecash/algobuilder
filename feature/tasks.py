@@ -4,10 +4,10 @@ from feature import feature
 
 
 @shared_task(name='calculate_feature', queue='feature')
-def calculate_feature(feature_execution_id: int):
+def calculate_feature(feature_id: int):
     """
-    Executes the feature calculation for the specified feature execution
-    :param feature_execution_id:
+    Executes the feature calculation for all feature_executions attached to the specified feature
+    :param feature_id:
     :return:
     """
     from feature import models  # Imported when needed, due to circular dependency
@@ -15,14 +15,23 @@ def calculate_feature(feature_execution_id: int):
     # Logger
     log = logging.getLogger(__name__)
 
-    # Get the feature execution model class from its id
-    feature_execution_model = models.FeatureExecution.objects.get(id=feature_execution_id)
+    # Get the feature
+    feature_model = models.Feature.objects.get(id=feature_id)
 
-    # Only continue if the execution and base feature are active
-    if feature_execution_model.active and feature_execution_model.feature.active:
-        # Get instance
-        feature_impl = feature.FeatureImplementation.instance(feature_execution_model.feature.name)
+    # Continue if active
+    if feature_model.active:
+        log.debug(f"Running task to calculate feature {feature_model.name}.")
+        # Get the implementation
+        feature_impl = feature.FeatureImplementation.instance(feature_model.name)
 
-        # Execute
-        log.debug(f"Running FeatureExecution for {feature_execution_model}.")
-        feature_impl.execute(feature_execution_model)
+        # Execute all active feature executions
+        for feature_execution in feature_model.featureexecution_set.all():
+            if feature_execution.active:
+                # Execute
+                log.debug(f"Running FeatureExecution {feature_execution}.")
+                feature_impl.execute(feature_execution)
+            else:
+                log.debug(f"Not running FeatureExecution {feature_execution}. It is inactive.")
+    else:
+        log.debug(f"Task to calculate feature {feature_model.name} did not run as feature is inactive.")
+

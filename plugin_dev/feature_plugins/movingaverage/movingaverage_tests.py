@@ -48,13 +48,14 @@ class TestMovingAverageFeature(TestCase):
             candle.save()
 
         # Create a feature, feature execution and feature execution symbol
-        self.feature = ft_models.Feature(name="MovingAverage", pluginclass=self.plugin_class)
+        self.feature = ft_models.Feature(name="MovingAverage", pluginclass=self.plugin_class, calculation_period='1min',
+                                         calculation_frequency='{"minute": "*"}')
         self.feature.save()
-        self.feature_execution = ft_models.FeatureExecution(feature=self.feature, candle_period='1S',
-                                                            calculation_period='1min')
+        self.feature_execution = ft_models.FeatureExecution(feature=self.feature)
         self.feature_execution.save()
         feature_execution_dss = ft_models.FeatureExecutionDataSourceSymbol(feature_execution=self.feature_execution,
-                                                                           datasource_symbol=self.dss)
+                                                                           datasource_symbol=self.dss,
+                                                                           candle_period='1S')
         feature_execution_dss.save()
 
     def test_execute(self):
