@@ -9,5 +9,5 @@ cd ~/git/algobuilder
 git pull
 
 # Then we will copy any changed files to /opt/algobuilder
-sudo su
-rsync -rtv ~/git/algobuilder /opt
+cd /opt/algobuilder
+rsync -rtv ~/git/algobuilder/ .
