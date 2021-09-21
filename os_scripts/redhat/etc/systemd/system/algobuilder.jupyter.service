@@ -1,0 +1,15 @@
+[Unit]
+Description=Jupyter server service for AlgoBuilder
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/systemd/system/algobuilder.jupyter.conf
+User=algobuilder
+Group=algobuilder
+WorkingDirectory=/opt/algobuilder
+ExecStart=/bin/sh -c '${PYTHON_BIN} manage.py shell_plus --notebook
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

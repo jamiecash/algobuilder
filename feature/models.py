@@ -103,7 +103,7 @@ class FeatureExecution(models.Model):
     feature = models.ForeignKey(Feature, on_delete=models.CASCADE)
 
     # The name of this feature execution
-    name = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=30, unique=True)
 
     # Active.
     active = models.BooleanField(default=True)
