@@ -1,9 +1,6 @@
 [Unit]
 Description=Jupyter server service for AlgoBuilder
 After=network.target
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=jupyter
 
 [Service]
 Type=simple
@@ -11,7 +8,10 @@ EnvironmentFile=/etc/systemd/system/algobuilder.jupyter.conf
 User=algobuilder
 Group=algobuilder
 WorkingDirectory=/opt/algobuilder
-ExecStart=/bin/sh -c '${PYTHON_BIN} manage.py shell_plus --notebook
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=jupyter
+ExecStart=/bin/sh -c '${PYTHON_BIN} manage.py shell_plus --notebook'
 Restart=always
 
 [Install]
