@@ -1,6 +1,9 @@
 [Unit]
 Description=Jupyter server service for AlgoBuilder
 After=network.target
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=jupyter
 
 [Service]
 Type=simple
