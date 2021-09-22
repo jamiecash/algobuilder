@@ -13,7 +13,7 @@ A datasource is the source of the symbol and price data for your application. Al
    * ```get_prices(self, symbol: str, from_date: datetime, to_date: datetime, period: str) -> pd.DataFrame:``` This should return a dataframe of price data candles for the specified symbol name between the specified date range. The candles returned should be for the specified period. Supported period values are available in ```models.candle_periods```. For any period that you don't wish to support, you should raise a ```datasource.PeriodNotImplementedError```. 
    *  An example that retrieves symbol and price data from MetaTrader5 is provided below. This examples makes use of the MetaTrader copy_rates and copy_ticks APIs, using ticks and resampling for periods not supported by the rates API.
 
-[MetaTrader5 Example](README/examples/mt5datasource.py)
+[MetaTrader5 Example](../plugin_dev/datasource_plugins/mt5datasource/mt5datasource.py)
 
 
 2) Create a requirements.txt file containing all the modules required for your datasource. An example that supports the MetaTrader5 datasource is shown below.
@@ -25,19 +25,19 @@ pandas~=1.3.0
 ```
 
 ## Configure your datasource
-1) Launch the applications web server if it isn't already running.
+3) Launch the applications web server if it isn't already running.
 ```shell
 python manage.py runserver
 ```
 
-3) Load the datasource as plugin, following the instructions for [loading a plugin](../plugin/README.md).
+4) Load the datasource as plugin, following the instructions for [loading a plugin](../plugin/README.md).
    
    
-4) Navagate to the datasource admin page (http://localhost:8000/admin/pricedata/datasource/).
+5) Navagate to the datasource admin page (http://localhost:8000/admin/pricedata/datasource/).
 
-5) Click 'ADD DATASOURCE', then:
+6) Click 'ADD DATASOURCE', then:
    * Provide a name for your datasource.
-   * Select the DataSourceImplementation class that you loaded in step 3.
+   * Select the DataSourceImplementation class that you loaded in step 4.
    * Provide any parameters required by your datasource class as a string representation of a dict. (e.g., the MetaTrader example above requires a market_watch_only parameter which can be input as {'market_watch_only': False}).
    * Run the periodic task scheduler to create your daily task to refresh your datasources symbols.
 
@@ -55,7 +55,7 @@ python manage.py runserver
   * Your data source implementation should have correctly populated the instrument type, however if not, this can be changed in the 'symbol' admin page. http://localhost:8000/admin/pricedata/symbol/
   * Select whether price data will be retrieved for each symbol for your newly configured datasource from the 'datasourcesymbol' admin page. http://localhost:8000/admin/pricedata/datasourcesymbol/ . Price data can be retrieved for each symbol from any number of data sources. Use the filters and search available symbols in the admin page to quickly find and select symbols by their name or instrument type. You can set and unset the retrieve price data flag for all selected symbols using the actions box at the top of the page.
 
-6) Select which candle periods will be configured for your datasource in the datasource admin page. AlgoBuilder can be configured to retrieve price candle data for multiple periods at the same time. The 'start from' setting will be the first candle retrieved for the period when the candle data is retrieved from the datasource for the first time. Set the 'active' flag to enable retrieval of price data for period.
+7) Select which candle periods will be configured for your datasource in the datasource admin page. AlgoBuilder can be configured to retrieve price candle data for multiple periods at the same time. The 'start from' setting will be the first candle retrieved for the period when the candle data is retrieved from the datasource for the first time. Set the 'active' flag to enable retrieval of price data for period.
   * Your periodic task scheduler will create tasks to retrieve price data for your data source for all selected candle periods.
   * Your task processor will process the tasks to retrieve price data from your datasource and save to the AlgoBuilder database.
    
